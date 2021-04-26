@@ -1,7 +1,7 @@
 {
   "name": "@koumoul/data-fair-processings-download-file",
   "version": "0.1.0",
-  "description": "Create datasets from a simple file upload.",
+  "description": "Create datasets from a simple file download.",
   "main": "index.js",
   "scripts": {
     "test": "mocha",
