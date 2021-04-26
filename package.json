@@ -1,6 +1,6 @@
 {
   "name": "@koumoul/dfp-download-file",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Create datasets from a simple file download.",
   "main": "index.js",
   "scripts": {
