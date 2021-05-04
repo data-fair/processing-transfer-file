@@ -33,7 +33,6 @@ exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axi
   await fs.close(fd)
   const filename = res.headers['content-disposition'] ? res.headers['content-disposition'].match(/filename="(.*)"/)[1] : decodeURIComponent(path.parse(processingConfig.url).base)
   const formData = new FormData()
-  if (processingConfig.dataset.id) formData.append('id', processingConfig.dataset.id)
   if (processingConfig.dataset.title) formData.append('title', processingConfig.dataset.title)
   formData.append('file', fs.createReadStream(tmpFile), { filename })
   formData.getLength = util.promisify(formData.getLength)
