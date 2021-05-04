@@ -28,7 +28,7 @@ exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axi
   await fs.ensureFile(tmpFile)
   await pump(res.data, fs.createWriteStream(tmpFile))
   // Try to prevent weird bug with NFS by forcing syncing file before reading it
-  const fd = await fs.open(tmpFile)
+  const fd = await fs.open(tmpFile, 'r')
   await fs.fsync(fd)
   await fs.close(fd)
   const filename = res.headers['content-disposition'] ? res.headers['content-disposition'].match(/filename="(.*)"/)[1] : decodeURIComponent(path.parse(processingConfig.url).base)
