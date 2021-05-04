@@ -10,7 +10,7 @@ function displayBytes (aSize) {
 exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axios, log, patchConfig }) => {
   const util = require('util')
   const pump = util.promisify(require('pump'))
-  const fs = require('fs')
+  const fs = require('fs-extra')
   const path = require('path')
   const FormData = require('form-data')
 
