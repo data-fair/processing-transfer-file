@@ -21,7 +21,7 @@ exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axi
     await log.info(`le jeu de donnée existe, id="${dataset.id}", title="${dataset.title}"`)
   }
 
-  await log.info('téléchargement du fichier')
+  await log.step('Téléchargement du fichier')
   const res = await axios.get(processingConfig.url, { responseType: 'stream' })
   const tmpFile = path.join(tmpDir, 'file')
   // creating empty file before streaming seems to fix some weird bugs with NFS
@@ -32,12 +32,15 @@ exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axi
   await fs.fsync(fd)
   await fs.close(fd)
   const filename = res.headers['content-disposition'] ? res.headers['content-disposition'].match(/filename="(.*)"/)[1] : decodeURIComponent(path.parse(processingConfig.url).base)
+  await log.info(`le fichier a été téléchargé (${filename})`)
+
+  await log.step('Chargement vers le jeu de données')
   const formData = new FormData()
   if (processingConfig.dataset.title) formData.append('title', processingConfig.dataset.title)
   formData.append('file', fs.createReadStream(tmpFile), { filename })
   formData.getLength = util.promisify(formData.getLength)
   const contentLength = await formData.getLength()
-  await log.info(`chargement du fichier (${displayBytes(contentLength)}) vers le jeu de données`)
+  await log.info(`chargement de (${displayBytes(contentLength)})`)
   const dataset = (await axios({
     method: 'post',
     url: processingConfig.dataset.id ? `api/v1/datasets/${processingConfig.dataset.id}` : 'api/v1/datasets',
@@ -47,4 +50,5 @@ exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axi
     headers: { ...formData.getHeaders(), 'content-length': contentLength }
   })).data
   await patchConfig({ datasetMode: 'update', dataset: { id: dataset.id, title: dataset.title } })
+  await log.info(`fichier chargé dans le jeu de donnée ${dataset.title} (${dataset.id})`)
 }
