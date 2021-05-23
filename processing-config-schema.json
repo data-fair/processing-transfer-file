@@ -38,7 +38,9 @@
     "title": "Paramètres",
     "required": ["url"],
     "properties": {
-      "url": {"title": "URL source", "type": "string"}
+      "url": {"title": "URL source", "type": "string", "description": "les protocoles supportés sont HTTP, HTTPS, FTP et SFTP"},
+      "username": {"title": "Utilisateur", "type": "string"},
+      "password": {"title": "Mot de passe", "type": "string", "x-props": {"type": "password"}}
     }
   }]
 }

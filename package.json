@@ -4,7 +4,7 @@
   "description": "Create datasets from a simple file download.",
   "main": "index.js",
   "scripts": {
-    "test": "mocha",
+    "test": "mocha --exit",
     "lint": "eslint --ignore-path .gitignore .",
     "lint-fix": "eslint --ignore-path .gitignore --fix ."
   },
@@ -31,8 +31,11 @@
     "standard": "^16.0.3"
   },
   "dependencies": {
+    "event-to-promise": "^0.8.0",
     "form-data": "^4.0.0",
     "fs-extra": "^9.1.0",
-    "pump": "^3.0.0"
+    "ftp": "^0.3.10",
+    "pump": "^3.0.0",
+    "ssh2-sftp-client": "^6.0.1"
   }
 }
