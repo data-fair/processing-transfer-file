@@ -84,14 +84,18 @@ exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axi
   formData.getLength = util.promisify(formData.getLength)
   const contentLength = await formData.getLength()
   await log.info(`chargement de (${displayBytes(contentLength)})`)
-  const dataset = (await axios({
-    method: 'post',
-    url: (processingConfig.dataset && processingConfig.dataset.id) ? `api/v1/datasets/${processingConfig.dataset.id}` : 'api/v1/datasets',
-    data: formData,
-    maxContentLength: Infinity,
-    maxBodyLength: Infinity,
-    headers: { ...formData.getHeaders(), 'content-length': contentLength }
-  })).data
-  await patchConfig({ datasetMode: 'update', dataset: { id: dataset.id, title: dataset.title } })
-  await log.info(`fichier chargé dans le jeu de donnée ${dataset.title} (${dataset.id})`)
+  if (processingConfig.datasetMode === 'lines') {
+    // TODO
+  } else {
+    const dataset = (await axios({
+      method: 'post',
+      url: (processingConfig.dataset && processingConfig.dataset.id) ? `api/v1/datasets/${processingConfig.dataset.id}` : 'api/v1/datasets',
+      data: formData,
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+      headers: { ...formData.getHeaders(), 'content-length': contentLength }
+    })).data
+    await patchConfig({ datasetMode: 'update', dataset: { id: dataset.id, title: dataset.title } })
+    await log.info(`fichier chargé dans le jeu de donnée ${dataset.title} (${dataset.id})`)
+  }
 }

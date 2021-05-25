@@ -17,10 +17,27 @@
         }
       }
     }, {
-      "title": "Mettre à jour un jeu de données",
+      "title": "Mettre à jour un jeu de données (fichier)",
       "required": ["dataset"],
       "properties": {
         "datasetMode": { "type": "string", "const": "update" },
+        "dataset": {
+          "type": "object",
+          "x-fromUrl": "{context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&{context.ownerFilter}",
+          "x-itemsProp": "results",
+          "x-itemTitle": "title",
+          "x-itemKey": "id",
+          "properties": {
+            "id": {"type": "string", "title": "Identifiant"},
+            "title": {"type": "string", "title": "Titre"}
+          }
+        }
+      }
+    }, {
+      "title": "Mettre à jour des lignes d'un jeu de données (incrémental)",
+      "required": ["dataset"],
+      "properties": {
+        "datasetMode": { "type": "string", "const": "lines" },
         "dataset": {
           "type": "object",
           "x-fromUrl": "{context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&{context.ownerFilter}",
