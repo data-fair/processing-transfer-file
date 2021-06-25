@@ -125,4 +125,44 @@ describe('Download file processing', () => {
     const datasetId = processingConfig.dataset.id
     assert.ok(datasetId.startsWith('download-file-test-ftp'))
   })
+
+  it('should load a line as bulk actions in rest dataset', async function () {
+    this.timeout(10000)
+    try {
+      await axiosInstance.delete('api/v1/datasets/download-file-rest-test')
+    } catch (err) {
+      if (err.status !== 404) throw err
+    }
+    await new Promise(resolve => setTimeout(resolve, 1000))
+    const dataset = (await axiosInstance.put('api/v1/datasets/download-file-rest-test', {
+      isRest: true,
+      title: 'download-file-rest-test',
+      schema: [
+        { key: 'Country', type: 'string' },
+        { key: 'Place', type: 'string' },
+        { key: 'Start_date', type: 'string' },
+        { key: 'End_date', type: 'string' },
+        { key: 'Level', type: 'string' }
+      ]
+    })).data
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    const processingConfig = {
+      dataset: { title: dataset.title, id: dataset.id },
+      datasetMode: 'lines',
+      url: 'https://koumoul.com/s/data-fair/api/v1/datasets/confinements-mondiaux/raw'
+    }
+    await fs.ensureDir('data/tmp')
+    await downloadFile.run({
+      pluginConfig: {},
+      processingConfig,
+      axios: axiosInstance,
+      log,
+      tmpDir: 'data/tmp',
+      async patchConfig (patch) {
+        console.log('received config patch', patch)
+        Object.assign(processingConfig, patch)
+      }
+    })
+    assert.equal(processingConfig.datasetMode, 'lines')
+  })
 })

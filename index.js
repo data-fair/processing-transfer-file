@@ -78,15 +78,34 @@ exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axi
   await log.info(`le fichier a été téléchargé (${filename})`)
 
   await log.step('Chargement vers le jeu de données')
-  const formData = new FormData()
-  if (processingConfig.dataset && processingConfig.dataset.title) formData.append('title', processingConfig.dataset.title)
-  formData.append('file', fs.createReadStream(tmpFile), { filename })
-  formData.getLength = util.promisify(formData.getLength)
-  const contentLength = await formData.getLength()
-  await log.info(`chargement de (${displayBytes(contentLength)})`)
   if (processingConfig.datasetMode === 'lines') {
-    // TODO
+    const formData = new FormData()
+    formData.append('actions', fs.createReadStream(tmpFile), { filename })
+    formData.getLength = util.promisify(formData.getLength)
+    const contentLength = await formData.getLength()
+    await log.info(`chargement de ${displayBytes(contentLength)} dans un jeu incrémental`)
+    const result = (await axios({
+      method: 'post',
+      url: `api/v1/datasets/${processingConfig.dataset.id}/_bulk_lines`,
+      data: formData,
+      maxContentLength: Infinity,
+      maxBodyLength: Infinity,
+      headers: { ...formData.getHeaders(), 'content-length': contentLength }
+    })).data
+    await log.info(`lignes chargées: ${result.nbOk.toLocaleString()} ok, ${result.nbNotModified.toLocaleString()} sans modification, ${result.nbErrors.toLocaleString()} en erreur`)
+    if (result.nbErrors) {
+      await log.error(`${result.nbErrors} erreurs rencontrées`)
+      for (const error of result.errors) {
+        await log.error(JSON.stringify(error))
+      }
+    }
   } else {
+    const formData = new FormData()
+    if (processingConfig.dataset && processingConfig.dataset.title) formData.append('title', processingConfig.dataset.title)
+    formData.append('file', fs.createReadStream(tmpFile), { filename })
+    formData.getLength = util.promisify(formData.getLength)
+    const contentLength = await formData.getLength()
+    await log.info(`chargement de ${displayBytes(contentLength)}`)
     const dataset = (await axios({
       method: 'post',
       url: (processingConfig.dataset && processingConfig.dataset.id) ? `api/v1/datasets/${processingConfig.dataset.id}` : 'api/v1/datasets',
