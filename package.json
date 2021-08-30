@@ -1,5 +1,5 @@
 {
-  "name": "@koumoul/dfp-dl-file",
+  "name": "@data-fair/processing-download-file",
   "version": "0.3.0",
   "description": "Create datasets from a simple file download.",
   "main": "index.js",
