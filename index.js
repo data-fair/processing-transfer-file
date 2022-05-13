@@ -15,7 +15,7 @@ function displayBytes (aSize) {
 }
 
 const fetchHTTP = async (processingConfig, tmpFile, axios) => {
-  const opts = { responseType: 'stream' }
+  const opts = { responseType: 'stream', maxRedirects: 4 }
   if (processingConfig.username && processingConfig.password) {
     opts.auth = {
       username: process.username,

@@ -50,7 +50,7 @@ describe('Download file processing', () => {
 
     const processingConfig = {
       dataset: { title: 'Download file test' },
-      url: 'https://koumoul.com/s/data-fair/api/v1/datasets/confinements-mondiaux/raw'
+      url: 'https://koumoul.com/data-fair/api/v1/datasets/confinements-mondiaux/raw'
     }
     await fs.ensureDir('data/tmp')
     await downloadFile.run({
@@ -149,7 +149,7 @@ describe('Download file processing', () => {
     const processingConfig = {
       dataset: { title: dataset.title, id: dataset.id },
       datasetMode: 'lines',
-      url: 'https://koumoul.com/s/data-fair/api/v1/datasets/confinements-mondiaux/raw'
+      url: 'https://koumoul.com/data-fair/api/v1/datasets/confinements-mondiaux/raw'
     }
     await fs.ensureDir('data/tmp')
     await downloadFile.run({
