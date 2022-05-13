@@ -67,7 +67,7 @@ describe('Download file processing', () => {
     assert.equal(processingConfig.datasetMode, 'update')
     assert.ok(processingConfig.dataset.title.startsWith('Download file test'))
     const datasetId = processingConfig.dataset.id
-    assert.ok(datasetId.startsWith('download-file-test'))
+    assert.ok(datasetId.startsWith('transfer-file-test'))
   })
 
   it('should download a file over sftp', async function () {
@@ -95,7 +95,7 @@ describe('Download file processing', () => {
     assert.equal(processingConfig.datasetMode, 'update')
     assert.ok(processingConfig.dataset.title.startsWith('Download file test sftp'))
     const datasetId = processingConfig.dataset.id
-    assert.ok(datasetId.startsWith('download-file-test-sftp'))
+    assert.ok(datasetId.startsWith('transfer-file-test-sftp'))
   })
 
   it('should download a file over ftp', async function () {
@@ -123,20 +123,20 @@ describe('Download file processing', () => {
     assert.equal(processingConfig.datasetMode, 'update')
     assert.ok(processingConfig.dataset.title.startsWith('Download file test ftp'))
     const datasetId = processingConfig.dataset.id
-    assert.ok(datasetId.startsWith('download-file-test-ftp'))
+    assert.ok(datasetId.startsWith('transfer-file-test-ftp'))
   })
 
   it('should load a line as bulk actions in rest dataset', async function () {
     this.timeout(10000)
     try {
-      await axiosInstance.delete('api/v1/datasets/download-file-rest-test')
+      await axiosInstance.delete('api/v1/datasets/transfer-file-rest-test')
     } catch (err) {
       if (err.status !== 404) throw err
     }
     await new Promise(resolve => setTimeout(resolve, 1000))
-    const dataset = (await axiosInstance.put('api/v1/datasets/download-file-rest-test', {
+    const dataset = (await axiosInstance.put('api/v1/datasets/transfer-file-rest-test', {
       isRest: true,
-      title: 'download-file-rest-test',
+      title: 'transfer-file-rest-test',
       schema: [
         { key: 'Country', type: 'string' },
         { key: 'Place', type: 'string' },
