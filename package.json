@@ -10,7 +10,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/koumoul-dev/data-fair-processings-download-file.git"
+    "url": "git+https://github.com/data-fair/processing-download-file.git"
   },
   "keywords": [
     "data-fair-processings-plugin"
@@ -18,9 +18,9 @@
   "author": "Alban Mouton <alban.mouton@gmail.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/koumoul-dev/data-fair-processings-download-file/issues"
+    "url": "https://github.com/data-fair/processing-download-file/issues"
   },
-  "homepage": "https://github.com/koumoul-dev/data-fair-processings-download-file#readme",
+  "homepage": "https://github.com/data-fair/processing-download-file#readme",
   "devDependencies": {
     "axios": "^0.21.1",
     "chalk": "^4.1.0",
