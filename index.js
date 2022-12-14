@@ -24,7 +24,8 @@ const fetchHTTP = async (processingConfig, tmpFile, axios) => {
   }
   const res = await axios.get(processingConfig.url, opts)
   await pump(res.data, fs.createWriteStream(tmpFile))
-  if (res.headers['content-disposition']) return res.headers['content-disposition'].match(/filename="(.*)"/)[1]
+  if (res.headers['content-disposition'] && res.headers['content-disposition'].includes('filename=')) return res.headers['content-disposition'].match(/filename="(.*)"/)[1]
+  if (res.request && res.request.res && res.request.res.responseUrl) return decodeURIComponent(path.parse(res.request.res.responseUrl).base)
 }
 
 const fetchSFTP = async (processingConfig, tmpFile) => {

@@ -50,7 +50,7 @@ describe('Download file processing', () => {
 
     const processingConfig = {
       dataset: { title: 'Download file test' },
-      url: 'https://koumoul.com/data-fair/api/v1/datasets/confinements-mondiaux/raw'
+      url: 'https://www.data.gouv.fr/fr/datasets/r/e32f7675-913b-4e01-b8c8-0a29733e4407'
     }
     await fs.ensureDir('data/tmp')
     await downloadFile.run({
@@ -67,7 +67,7 @@ describe('Download file processing', () => {
     assert.equal(processingConfig.datasetMode, 'update')
     assert.ok(processingConfig.dataset.title.startsWith('Download file test'))
     const datasetId = processingConfig.dataset.id
-    assert.ok(datasetId.startsWith('transfer-file-test'))
+    assert.ok(datasetId.startsWith('download-file-test'))
   })
 
   it('should download a file over sftp', async function () {
