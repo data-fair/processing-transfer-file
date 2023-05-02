@@ -35,7 +35,7 @@ const fetchSFTP = async (processingConfig, tmpFile) => {
   const url = new URL(processingConfig.url)
   const SFTPClient = require('ssh2-sftp-client')
   const sftp = new SFTPClient()
-  await sftp.connect({ host: url.host, port: url.port, username: processingConfig.username, password: processingConfig.password })
+  await sftp.connect({ host: url.hostname, port: url.port, username: processingConfig.username, password: processingConfig.password })
   await sftp.get(url.pathname, tmpFile)
 }
 
@@ -43,7 +43,7 @@ const fetchFTP = async (processingConfig, tmpFile) => {
   const url = new URL(processingConfig.url)
   const FTPClient = require('ftp')
   const ftp = new FTPClient()
-  ftp.connect({ host: url.host, port: url.port, user: processingConfig.username, password: processingConfig.password })
+  ftp.connect({ host: url.hostname, port: url.port, user: processingConfig.username, password: processingConfig.password })
   await eventToPromise(ftp, 'ready')
   ftp.get = util.promisify(ftp.get)
   const stream = await ftp.get(url.pathname)
