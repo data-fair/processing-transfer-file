@@ -23,6 +23,7 @@
         "datasetMode": { "type": "string", "const": "update" },
         "dataset": {
           "type": "object",
+          "title": "Jeu de données",
           "x-fromUrl": "{context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&{context.ownerFilter}",
           "x-itemsProp": "results",
           "x-itemTitle": "title",
@@ -35,11 +36,12 @@
       }
     }, {
       "title": "Mettre à jour des lignes d'un jeu de données (incrémental)",
-      "required": ["dataset"],
+      "required": ["dataset", "separator"],
       "properties": {
         "datasetMode": { "type": "string", "const": "lines" },
         "dataset": {
           "type": "object",
+          "title":"Jeu de données",
           "x-fromUrl": "{context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&rest=true&{context.ownerFilter}",
           "x-itemsProp": "results",
           "x-itemTitle": "title",
@@ -48,6 +50,18 @@
             "id": {"type": "string", "title": "Identifiant"},
             "title": {"type": "string", "title": "Titre"}
           }
+        },
+        "separator": {
+          "type": "string",
+          "title": "Séparateur",
+          "default": ",",
+          "enum": [
+            ",",
+            ";",
+            "-",
+            "/",
+            "|"
+          ]
         }
       }
     }]

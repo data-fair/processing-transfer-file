@@ -51,6 +51,8 @@ const fetchFTP = async (processingConfig, tmpFile) => {
 }
 
 exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axios, log, patchConfig }) => {
+  await fs.ensureDir(tmpDir)
+
   if (processingConfig.datasetMode === 'update') {
     await log.step('Vérification du jeu de données')
     const dataset = (await axios.get(`api/v1/datasets/${processingConfig.dataset.id}`)).data
@@ -90,7 +92,7 @@ exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axi
     await log.info(`chargement de ${displayBytes(contentLength)} dans un jeu incrémental`)
     const result = (await axios({
       method: 'post',
-      url: `api/v1/datasets/${processingConfig.dataset.id}/_bulk_lines`,
+      url: `api/v1/datasets/${processingConfig.dataset.id}/_bulk_lines?sep=${processingConfig.separator}`,
       data: formData,
       maxContentLength: Infinity,
       maxBodyLength: Infinity,
