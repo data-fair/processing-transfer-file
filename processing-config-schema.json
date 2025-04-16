@@ -2,76 +2,113 @@
   "type": "object",
   "x-display": "tabs",
   "required": ["datasetMode"],
-  "allOf": [{
-    "title": "Jeu de données",
-    "oneOf": [{
-      "title": "Créer un jeu de données",
-      "required": ["dataset"],
-      "properties": {
-        "datasetMode": { "type": "string", "const": "create", "title": "Action" },
-        "dataset": {
-          "type": "object",
+  "allOf": [
+    {
+      "title": "Jeu de données",
+      "oneOf": [
+        {
+          "title": "Créer un jeu de données",
+          "required": ["dataset"],
           "properties": {
-            "title": {"type": "string", "title": "Titre (laissez vide pour utiliser le nom de fichier téléchargé)"}
-          }
-        }
-      }
-    }, {
-      "title": "Mettre à jour un jeu de données (fichier)",
-      "required": ["dataset"],
-      "properties": {
-        "datasetMode": { "type": "string", "const": "update" },
-        "dataset": {
-          "type": "object",
-          "title": "Jeu de données",
-          "x-fromUrl": "{context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&{context.ownerFilter}",
-          "x-itemsProp": "results",
-          "x-itemTitle": "title",
-          "x-itemKey": "id",
-          "properties": {
-            "id": {"type": "string", "title": "Identifiant"},
-            "title": {"type": "string", "title": "Titre"}
-          }
-        }
-      }
-    }, {
-      "title": "Mettre à jour des lignes d'un jeu de données (incrémental)",
-      "required": ["dataset", "separator"],
-      "properties": {
-        "datasetMode": { "type": "string", "const": "lines" },
-        "dataset": {
-          "type": "object",
-          "title":"Jeu de données",
-          "x-fromUrl": "{context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&rest=true&{context.ownerFilter}",
-          "x-itemsProp": "results",
-          "x-itemTitle": "title",
-          "x-itemKey": "id",
-          "properties": {
-            "id": {"type": "string", "title": "Identifiant"},
-            "title": {"type": "string", "title": "Titre"}
+            "datasetMode": {
+              "type": "string",
+              "const": "create",
+              "title": "Action"
+            },
+            "dataset": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "title": "Titre (laissez vide pour utiliser le nom de fichier téléchargé)"
+                }
+              }
+            }
           }
         },
-        "separator": {
+        {
+          "title": "Mettre à jour un jeu de données (fichier)",
+          "required": ["dataset"],
+          "properties": {
+            "datasetMode": { "type": "string", "const": "update" },
+            "dataset": {
+              "type": "object",
+              "title": "Jeu de données",
+              "properties": {
+                "id": { "type": "string", "title": "Identifiant" },
+                "title": { "type": "string", "title": "Titre" }
+              },
+              "layout": {
+                "getItems": {
+                  "url": "${context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&${context.ownerFilter}",
+                  "itemsResults": "data.results",
+                  "itemTitle": "item.title",
+                  "itemKey": "item.id"
+                }
+              }
+            }
+          }
+        },
+        {
+          "title": "Mettre à jour des lignes d'un jeu de données (incrémental)",
+          "required": ["dataset", "separator"],
+          "properties": {
+            "datasetMode": { "type": "string", "const": "lines" },
+            "dataset": {
+              "type": "object",
+              "title": "Jeu de données",
+              "properties": {
+                "id": { "type": "string", "title": "Identifiant" },
+                "title": { "type": "string", "title": "Titre" }
+              },
+              "layout": {
+                "getItems": {
+                  "url": "${context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&rest=true&${context.ownerFilter}",
+                  "itemsResults": "data.results",
+                  "itemTitle": "item.title",
+                  "itemKey": "item.id"
+                }
+              }
+            },
+            "separator": {
+              "type": "string",
+              "title": "Séparateur",
+              "default": ",",
+              "enum": [",", ";", "-", "/", "|"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "title": "Paramètres",
+      "required": ["url"],
+      "properties": {
+        "url": {
+          "title": "URL source",
           "type": "string",
-          "title": "Séparateur",
-          "default": ",",
-          "enum": [
-            ",",
-            ";",
-            "-",
-            "/",
-            "|"
-          ]
+          "description": "les protocoles supportés sont HTTP, HTTPS, FTP et SFTP"
+        },
+        "username": {
+          "title": "Utilisateur",
+          "type": "string",
+          "layout": {
+            "props": {
+              "autocomplete": "off"
+            }
+          }
+        },
+        "password": {
+          "title": "Mot de passe",
+          "type": "string",
+          "layout": {
+            "props": {
+              "type": "password",
+              "autocomplete": "off"
+            }
+          }
         }
       }
-    }]
-  }, {
-    "title": "Paramètres",
-    "required": ["url"],
-    "properties": {
-      "url": {"title": "URL source", "type": "string", "description": "les protocoles supportés sont HTTP, HTTPS, FTP et SFTP"},
-      "username": {"title": "Utilisateur", "type": "string"},
-      "password": {"title": "Mot de passe", "type": "string", "x-props": {"type": "password"}}
     }
-  }]
+  ]
 }
