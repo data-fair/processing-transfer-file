@@ -1,6 +1,6 @@
 {
   "name": "@data-fair/processing-transfer-file",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "Create datasets from a simple file download, supports multiple protocols.",
   "main": "index.js",
   "scripts": {
