@@ -94,7 +94,7 @@
           "type": "string",
           "layout": {
             "props": {
-              "autocomplete": "off"
+              "autocomplete": "new-text"
             }
           }
         },
@@ -104,7 +104,7 @@
           "layout": {
             "props": {
               "type": "password",
-              "autocomplete": "off"
+              "autocomplete": "new-password"
             }
           }
         }
