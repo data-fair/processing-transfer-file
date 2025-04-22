@@ -40,7 +40,7 @@
               },
               "layout": {
                 "getItems": {
-                  "url": "${context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&${context.ownerFilter}",
+                  "url": "${context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&${context.ownerFilter}&size=100",
                   "itemsResults": "data.results",
                   "itemTitle": "item.title",
                   "itemKey": "item.id"
@@ -63,7 +63,7 @@
               },
               "layout": {
                 "getItems": {
-                  "url": "${context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&rest=true&${context.ownerFilter}",
+                  "url": "${context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&rest=true&${context.ownerFilter}&size=100",
                   "itemsResults": "data.results",
                   "itemTitle": "item.title",
                   "itemKey": "item.id"
