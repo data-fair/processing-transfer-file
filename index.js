@@ -25,6 +25,7 @@ const fetchHTTP = async (processingConfig, tmpFile, axios) => {
   const res = await axios.get(processingConfig.url, opts)
   await pump(res.data, fs.createWriteStream(tmpFile))
   if (res.headers['content-disposition'] && res.headers['content-disposition'].includes('filename=')) {
+    if (res.headers['content-disposition'].match(/filename=(.*);/)) return res.headers['content-disposition'].match(/filename=(.*);/)[1]
     if (res.headers['content-disposition'].match(/filename="(.*)"/)) return res.headers['content-disposition'].match(/filename="(.*)"/)[1]
     if (res.headers['content-disposition'].match(/filename=(.*)/)) return res.headers['content-disposition'].match(/filename=(.*)/)[1]
   }
