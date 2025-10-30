@@ -18,12 +18,13 @@ const fetchHTTP = async (processingConfig, tmpFile, axios) => {
   const opts = { responseType: 'stream', maxRedirects: 4 }
   if (processingConfig.username && processingConfig.password) {
     opts.auth = {
-      username: process.username,
+      username: processingConfig.username,
       password: processingConfig.password
     }
   }
   const res = await axios.get(processingConfig.url, opts)
   await pump(res.data, fs.createWriteStream(tmpFile))
+  if (processingConfig.filename) return processingConfig.filename
   if (res.headers['content-disposition'] && res.headers['content-disposition'].includes('filename=')) {
     if (res.headers['content-disposition'].match(/filename=(.*);/)) return res.headers['content-disposition'].match(/filename=(.*);/)[1]
     if (res.headers['content-disposition'].match(/filename="(.*)"/)) return res.headers['content-disposition'].match(/filename="(.*)"/)[1]
@@ -38,6 +39,7 @@ const fetchSFTP = async (processingConfig, tmpFile) => {
   const sftp = new SFTPClient()
   await sftp.connect({ host: url.hostname, port: url.port, username: processingConfig.username, password: processingConfig.password })
   await sftp.get(url.pathname, tmpFile)
+  return processingConfig.filename || decodeURIComponent(path.basename(url.pathname))
 }
 
 const fetchFTP = async (processingConfig, tmpFile) => {
@@ -49,6 +51,7 @@ const fetchFTP = async (processingConfig, tmpFile) => {
   ftp.get = util.promisify(ftp.get)
   const stream = await ftp.get(url.pathname)
   await pump(stream, fs.createWriteStream(tmpFile))
+  return processingConfig.filename || decodeURIComponent(path.basename(url.pathname))
 }
 
 exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axios, log, patchConfig }) => {
