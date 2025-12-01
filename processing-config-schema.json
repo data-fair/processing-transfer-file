@@ -112,6 +112,11 @@
           "title": "Nom du fichier",
           "type": "string",
           "description": "Ce nom apparaitra lors du téléchargement du fichier source du jeu de données. Par défaut, il est déduis du serveur ftp/sftp ou depuis l'url. Définir un nom de fichier peux résoudre les erreurs `400 - .... type is not supported (/api/v1/datasets)`"
+        },
+        "encoding": {
+          "title": "Encodage du fichier",
+          "type": "string",
+          "description": "Laissez vide pour une détection automatique de celui-ci"
         }
       }
     }

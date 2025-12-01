@@ -113,6 +113,7 @@ exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axi
     const formData = new FormData()
     if (processingConfig.dataset && processingConfig.dataset.title) formData.append('title', processingConfig.dataset.title)
     formData.append('file', fs.createReadStream(tmpFile), { filename })
+    if(processingConfig.encoding?.length) formData.append('file_encoding', processingConfig.encoding)
     formData.getLength = util.promisify(formData.getLength)
     const contentLength = await formData.getLength()
     await log.info(`chargement de ${displayBytes(contentLength)}`)
