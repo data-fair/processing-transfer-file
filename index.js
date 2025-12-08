@@ -4,6 +4,8 @@ const pump = util.promisify(require('pump'))
 const eventToPromise = require('event-to-promise')
 const path = require('path')
 const FormData = require('form-data')
+const exec = require('child_process').exec
+const pExec = util.promisify(exec)
 
 function displayBytes (aSize) {
   aSize = Math.abs(parseInt(aSize, 10))
@@ -87,6 +89,10 @@ exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axi
   await fs.close(fd)
   await log.info(`le fichier a été téléchargé (${filename})`)
 
+  if (processingConfig.ignoreFirstLines) {
+    await pExec(`sed -i 1,${processingConfig.ignoreFirstLines}d ${tmpFile}`)
+  }
+
   await log.step('Chargement vers le jeu de données')
   if (processingConfig.datasetMode === 'lines') {
     const formData = new FormData()
@@ -113,7 +119,7 @@ exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axi
     const formData = new FormData()
     if (processingConfig.dataset && processingConfig.dataset.title) formData.append('title', processingConfig.dataset.title)
     formData.append('file', fs.createReadStream(tmpFile), { filename })
-    if(processingConfig.encoding?.length) formData.append('file_encoding', processingConfig.encoding)
+    if (processingConfig.encoding?.length) formData.append('file_encoding', processingConfig.encoding)
     formData.getLength = util.promisify(formData.getLength)
     const contentLength = await formData.getLength()
     await log.info(`chargement de ${displayBytes(contentLength)}`)

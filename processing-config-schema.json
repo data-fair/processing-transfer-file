@@ -117,6 +117,10 @@
           "title": "Encodage du fichier",
           "type": "string",
           "description": "Laissez vide pour une détection automatique de celui-ci"
+        },
+        "ignoreFirstLines": {
+          "title": "Ignorer les N première lignes",
+          "type": "integer"
         }
       }
     }
