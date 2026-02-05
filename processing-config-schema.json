@@ -108,6 +108,11 @@
             }
           }
         },
+        "sshKey": {
+          "title": "Clé SSH privée (uniquement dans le cas d'une URL de type SFTP)",
+          "type": "string",
+          "layout": "textarea"
+        },
         "filename": {
           "title": "Nom du fichier",
           "type": "string",

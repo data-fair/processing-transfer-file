@@ -7,6 +7,8 @@ import nock from 'nock'
 import testUtils from '@data-fair/lib-processing-dev/tests-utils.js'
 import * as transferFilePlugin from '../index.ts'
 
+const sshKey = fs.readFileSync('test-it/resources/user_keys/id_rsa', 'utf8')
+
 describe('Download file processing', () => {
   it('should download a file over http', async function () {
     const processingConfig: ProcessingConfig = {
@@ -39,6 +41,38 @@ describe('Download file processing', () => {
     assert.ok(processingConfig.dataset.title!.startsWith('Download file test sftp'))
   })
 
+  it('should download a file over sftp with private key auth', async function () {
+    const processingConfig: ProcessingConfig = {
+      dataset: { title: 'Download file test sftp with key' },
+      url: 'sftp://localhost:31022/landing-zone/test.txt',
+      username: 'test3',
+      sshKey
+    }
+    const context = testUtils.context({
+      tmpDir: 'data/tmp', processingConfig
+      // @ts-ignore ProcessingTestConfig should be optional in lib-processing-dev
+    }, config, false)
+    await transferFilePlugin.run(context)
+    assert.equal(processingConfig.datasetMode, 'update')
+    assert.ok(processingConfig.dataset.title!.startsWith('Download file test sftp'))
+  })
+
+  it('should download a file over sftp with private key auth in secret', async function () {
+    const processingConfig: ProcessingConfig = {
+      dataset: { title: 'Download file test sftp with key' },
+      url: 'sftp://localhost:31022/landing-zone/test.txt',
+      username: 'test3',
+      sshKey: '***'
+    }
+    const context = testUtils.context({
+      tmpDir: 'data/tmp', processingConfig, secrets: { sshKey }
+      // @ts-ignore ProcessingTestConfig should be optional in lib-processing-dev
+    }, config, false)
+    await transferFilePlugin.run(context)
+    assert.equal(processingConfig.datasetMode, 'update')
+    assert.ok(processingConfig.dataset.title!.startsWith('Download file test sftp'))
+  })
+
   it('should download a file over ftp', async function () {
     const processingConfig: ProcessingConfig = {
       dataset: { title: 'Download file test ftp' },
@@ -56,7 +90,7 @@ describe('Download file processing', () => {
     assert.ok(processingConfig.dataset.title!.startsWith('Download file test ftp'))
   })
 
-  it.only('should load a line as bulk actions in rest dataset', async function () {
+  it('should load a line as bulk actions in rest dataset', async function () {
     // @ts-ignore ProcessingTestConfig should be optional in lib-processing-dev
     const { axios } = testUtils.context({ }, config, false)
 

@@ -19,7 +19,6 @@
 services:
   sftp:
     image: atmoz/sftp:alpine
-    container_name: sftp
     ports:
       - "31022:22"
     volumes:

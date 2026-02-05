@@ -5,20 +5,18 @@ import { promisify } from 'node:util'
 import FormData from 'form-data'
 import path from 'node:path'
 import fs from 'fs-extra'
-import type { ProcessingContext } from '@data-fair/lib-common-types/processings.js'
+import type { PrepareFunction, ProcessingContext } from '@data-fair/lib-common-types/processings.js'
 import type { ProcessingConfig } from './types/processingConfig/index.ts'
 import { exec as execCb } from 'node:child_process'
 import { type AxiosRequestConfig } from 'axios'
 
 const exec = promisify(execCb)
 
-const fetchHTTP = async (processingConfig: ProcessingConfig, tmpFile: string, axios: ProcessingContext['axios']) => {
+const fetchHTTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets'], tmpFile: string, axios: ProcessingContext['axios']) => {
+  const password = secrets?.password ?? processingConfig.password
   const opts: AxiosRequestConfig = { responseType: 'stream', maxRedirects: 4 }
-  if (processingConfig.username && processingConfig.password) {
-    opts.auth = {
-      username: processingConfig.username,
-      password: processingConfig.password
-    }
+  if (processingConfig.username && password) {
+    opts.auth = { username: processingConfig.username, password }
   }
   const res = await axios.get(processingConfig.url, opts)
   await pipeline(res.data, fs.createWriteStream(tmpFile))
@@ -31,20 +29,29 @@ const fetchHTTP = async (processingConfig: ProcessingConfig, tmpFile: string, ax
   if (res.request && res.request.res && res.request.res.responseUrl) return decodeURIComponent(path.parse(res.request.res.responseUrl).base)
 }
 
-const fetchSFTP = async (processingConfig: ProcessingConfig, tmpFile: string) => {
+const fetchSFTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets'], tmpFile: string) => {
   const url = new URL(processingConfig.url)
   const { default: SFTPClient } = await import('ssh2-sftp-client')
   const sftp = new SFTPClient()
-  await sftp.connect({ host: url.hostname, port: Number(url.port), username: processingConfig.username, password: processingConfig.password })
+  const password = secrets?.password ?? processingConfig.password
+  const privateKey = secrets?.sshKey ?? processingConfig.sshKey
+  await sftp.connect({
+    host: url.hostname,
+    port: Number(url.port),
+    username: processingConfig.username,
+    password,
+    privateKey
+  })
   await sftp.get(url.pathname, tmpFile)
   return processingConfig.filename || decodeURIComponent(path.basename(url.pathname))
 }
 
-const fetchFTP = async (processingConfig: ProcessingConfig, tmpFile: string) => {
+const fetchFTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets'], tmpFile: string) => {
   const url = new URL(processingConfig.url)
   const { default: FTPClient } = await import('ftp')
   const ftp = new FTPClient()
-  ftp.connect({ host: url.hostname, port: Number(url.port), user: processingConfig.username, password: processingConfig.password })
+  const password = secrets?.password ?? processingConfig.password
+  ftp.connect({ host: url.hostname, port: Number(url.port), user: processingConfig.username, password })
   await eventPromise(ftp, 'ready')
   const stream = await new Promise<NodeJS.ReadableStream>((resolve, reject) => {
     ftp.get(url.pathname, (err, stream) => {
@@ -66,7 +73,7 @@ const getContentLength = (formData: FormData) => {
 }
 
 export const run = async (context: ProcessingContext<ProcessingConfig>) => {
-  const { processingConfig, tmpDir, axios, log, patchConfig } = context
+  const { processingConfig, secrets, tmpDir, axios, log, patchConfig } = context
   console.log('tmpDir', tmpDir)
   await fs.ensureDir(tmpDir)
 
@@ -85,11 +92,11 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
   const url = new URL(processingConfig.url)
   let filename = decodeURIComponent(path.parse(processingConfig.url).base)
   if (url.protocol === 'http:' || url.protocol === 'https:') {
-    filename = await fetchHTTP(processingConfig, tmpFile, axios) || filename
+    filename = await fetchHTTP(processingConfig, secrets, tmpFile, axios) || filename
   } else if (url.protocol === 'sftp:') {
-    await fetchSFTP(processingConfig, tmpFile)
+    await fetchSFTP(processingConfig, secrets, tmpFile)
   } else if (url.protocol === 'ftp:' || url.protocol === 'ftps:') {
-    await fetchFTP(processingConfig, tmpFile)
+    await fetchFTP(processingConfig, secrets, tmpFile)
   } else {
     throw new Error(`protocole non supporté "${url.protocol}"`)
   }
@@ -142,5 +149,28 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
     })).data
     await patchConfig({ datasetMode: 'update', dataset: { id: dataset.id, title: dataset.title } })
     await log.info(`fichier chargé dans le jeu de donnée ${dataset.title} (${dataset.id})`)
+  }
+}
+
+export const prepare: PrepareFunction<ProcessingConfig> = async ({ processingConfig, secrets }) => {
+  const stars = '********'
+  const password = processingConfig.password
+  if (password && password !== stars) {
+    secrets.password = password
+    processingConfig.password = stars
+  } else if (secrets?.secretField && !password) {
+    delete secrets.secretField
+  }
+  const sshKey = processingConfig.sshKey
+  if (sshKey && sshKey !== stars) {
+    secrets.sshKey = sshKey
+    processingConfig.sshKey = stars
+  } else if (secrets?.sshKey && !sshKey) {
+    delete secrets.sshKey
+  }
+
+  return {
+    processingConfig,
+    secrets
   }
 }
