@@ -1,0 +1,36 @@
+# Serveur SFTP accessible via le port 31022
+
+# =======================================================
+# Génération des clés SSH pour le conteneur Docker SFTP
+#
+# Pour générer les clés SSH pour l'hôte et les placer dans le répertoire de configuration, utilisez les commandes suivantes :
+# mkdir -p test-it/resources/ssh_host_keys
+# ssh-keygen -t ed25519 -f test-it/resources/ssh_host_keys/ssh_host_ed25519_key < /dev/null
+# ssh-keygen -t rsa -b 4096 -f test-it/resources/ssh_host_keys/ssh_host_rsa_key < /dev/null
+#
+# Pour générer une clé SSH pour l'utilisateur "test3" et la placer dans le répertoire de configuration, utilisez la commande suivante :
+# mkdir -p test-it/resources/user_keys
+# ssh-keygen -t rsa -b 2048 -f test-it/resources/user_keys/id_rsa < /dev/null
+#
+# Pour tester la connexion de l'utilisateur "test3", utilisez la commande suivante :
+# sftp -i test-it/resources/user_keys/id_rsa -o MACs=hmac-sha2-256 -v -P 31022 test3@localhost
+# =======================================================
+
+services:
+  sftp:
+    image: atmoz/sftp:alpine
+    ports:
+      - "31022:22"
+    volumes:
+      # home directory pour l'utilisateur test3
+      - ./resources:/home/test3/landing-zone
+      # Fichier de configuration des utilisateurs (read-only)
+      - ./resources/users.conf:/etc/sftp/users.conf:ro
+      # Montage de tout le répertoire contenant les clés SSH de l'hôte
+      - ./resources/ssh_host_keys:/etc/ssh/keys:ro
+      # Montage de tout le répertoire contenant les clés publiques des utilisateurs
+      - ./resources/user_keys:/home/test3/.ssh/keys:ro
+
+      # RSA + ed25519 pour couvrir plus de clés ssh 
+
+    command: test3:12345:1001

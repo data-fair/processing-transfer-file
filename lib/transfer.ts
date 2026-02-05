@@ -1,31 +1,24 @@
-const util = require('util')
-const fs = require('fs-extra')
-const pump = util.promisify(require('pump'))
-const eventToPromise = require('event-to-promise')
-const path = require('path')
-const FormData = require('form-data')
-const exec = require('child_process').exec
-const pExec = util.promisify(exec)
+import { formatBytes } from '@data-fair/lib-utils/format/bytes.js'
+import { eventPromise } from '@data-fair/lib-utils/event-promise.js'
+import { pipeline } from 'node:stream/promises'
+import { promisify } from 'node:util'
+import FormData from 'form-data'
+import path from 'node:path'
+import fs from 'fs-extra'
+import type { ProcessingContext } from '@data-fair/lib-common-types/processings.js'
+import type { ProcessingConfig } from '../types/processingConfig/index.ts'
+import { exec as execCb } from 'node:child_process'
 
-function displayBytes (aSize) {
-  aSize = Math.abs(parseInt(aSize, 10))
-  if (aSize === 0) return '0 octets'
-  const def = [[1, 'octets'], [1000, 'ko'], [1000 * 1000, 'Mo'], [1000 * 1000 * 1000, 'Go'], [1000 * 1000 * 1000 * 1000, 'To'], [1000 * 1000 * 1000 * 1000 * 1000, 'Po']]
-  for (let i = 0; i < def.length; i++) {
-    if (aSize < def[i][0]) return (aSize / def[i - 1][0]).toLocaleString() + ' ' + def[i - 1][1]
-  }
-}
+const exec = promisify(execCb)
 
-const fetchHTTP = async (processingConfig, tmpFile, axios) => {
-  const opts = { responseType: 'stream', maxRedirects: 4 }
-  if (processingConfig.username && processingConfig.password) {
-    opts.auth = {
-      username: processingConfig.username,
-      password: processingConfig.password
-    }
+const fetchHTTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets'], tmpFile: string, axios: ProcessingContext['axios']) => {
+  const password = secrets?.password ?? processingConfig.password
+  const opts: any = { responseType: 'stream', maxRedirects: 4 }
+  if (processingConfig.username && password) {
+    opts.auth = { username: processingConfig.username, password }
   }
   const res = await axios.get(processingConfig.url, opts)
-  await pump(res.data, fs.createWriteStream(tmpFile))
+  await pipeline(res.data, fs.createWriteStream(tmpFile))
   if (processingConfig.filename) return processingConfig.filename
   if (res.headers['content-disposition'] && res.headers['content-disposition'].includes('filename=')) {
     if (res.headers['content-disposition'].match(/filename=(.*);/)) return res.headers['content-disposition'].match(/filename=(.*);/)[1]
@@ -35,28 +28,51 @@ const fetchHTTP = async (processingConfig, tmpFile, axios) => {
   if (res.request && res.request.res && res.request.res.responseUrl) return decodeURIComponent(path.parse(res.request.res.responseUrl).base)
 }
 
-const fetchSFTP = async (processingConfig, tmpFile) => {
+const fetchSFTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets'], tmpFile: string) => {
   const url = new URL(processingConfig.url)
-  const SFTPClient = require('ssh2-sftp-client')
+  const { default: SFTPClient } = await import('ssh2-sftp-client')
   const sftp = new SFTPClient()
-  await sftp.connect({ host: url.hostname, port: url.port, username: processingConfig.username, password: processingConfig.password })
+  const password = secrets?.password ?? processingConfig.password
+  const privateKey = secrets?.sshKey ?? processingConfig.sshKey
+  await sftp.connect({
+    host: url.hostname,
+    port: Number(url.port),
+    username: processingConfig.username,
+    password,
+    privateKey
+  })
   await sftp.get(url.pathname, tmpFile)
   return processingConfig.filename || decodeURIComponent(path.basename(url.pathname))
 }
 
-const fetchFTP = async (processingConfig, tmpFile) => {
+const fetchFTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets'], tmpFile: string) => {
   const url = new URL(processingConfig.url)
-  const FTPClient = require('ftp')
+  const { default: FTPClient } = await import('ftp')
   const ftp = new FTPClient()
-  ftp.connect({ host: url.hostname, port: url.port, user: processingConfig.username, password: processingConfig.password })
-  await eventToPromise(ftp, 'ready')
-  ftp.get = util.promisify(ftp.get)
-  const stream = await ftp.get(url.pathname)
-  await pump(stream, fs.createWriteStream(tmpFile))
+  const password = secrets?.password ?? processingConfig.password
+  ftp.connect({ host: url.hostname, port: Number(url.port), user: processingConfig.username, password })
+  await eventPromise(ftp, 'ready')
+  const stream = await new Promise<NodeJS.ReadableStream>((resolve, reject) => {
+    ftp.get(url.pathname, (err, stream) => {
+      if (err) reject(err)
+      else resolve(stream)
+    })
+  })
+  await pipeline(stream, fs.createWriteStream(tmpFile))
   return processingConfig.filename || decodeURIComponent(path.basename(url.pathname))
 }
 
-exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axios, log, patchConfig }) => {
+const getContentLength = (formData: FormData) => {
+  return new Promise<number>((resolve, reject) => {
+    formData.getLength((err, length) => {
+      if (err) reject(err)
+      else resolve(length)
+    })
+  })
+}
+
+export const run = async (context: ProcessingContext<ProcessingConfig>) => {
+  const { processingConfig, secrets, tmpDir, axios, log, patchConfig } = context
   await fs.ensureDir(tmpDir)
 
   if (processingConfig.datasetMode === 'update') {
@@ -74,11 +90,11 @@ exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axi
   const url = new URL(processingConfig.url)
   let filename = decodeURIComponent(path.parse(processingConfig.url).base)
   if (url.protocol === 'http:' || url.protocol === 'https:') {
-    filename = await fetchHTTP(processingConfig, tmpFile, axios) || filename
+    filename = await fetchHTTP(processingConfig, secrets, tmpFile, axios) || filename
   } else if (url.protocol === 'sftp:') {
-    await fetchSFTP(processingConfig, tmpFile)
+    await fetchSFTP(processingConfig, secrets, tmpFile)
   } else if (url.protocol === 'ftp:' || url.protocol === 'ftps:') {
-    await fetchFTP(processingConfig, tmpFile)
+    await fetchFTP(processingConfig, secrets, tmpFile)
   } else {
     throw new Error(`protocole non supporté "${url.protocol}"`)
   }
@@ -90,16 +106,15 @@ exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axi
   await log.info(`le fichier a été téléchargé (${filename})`)
 
   if (processingConfig.ignoreFirstLines) {
-    await pExec(`sed -i 1,${processingConfig.ignoreFirstLines}d ${tmpFile}`)
+    await exec(`sed -i 1,${processingConfig.ignoreFirstLines}d ${tmpFile}`)
   }
 
   await log.step('Chargement vers le jeu de données')
   if (processingConfig.datasetMode === 'lines') {
     const formData = new FormData()
     formData.append('actions', fs.createReadStream(tmpFile), { filename })
-    formData.getLength = util.promisify(formData.getLength)
-    const contentLength = await formData.getLength()
-    await log.info(`chargement de ${displayBytes(contentLength)} dans un jeu incrémental`)
+    const contentLength = await getContentLength(formData)
+    await log.info(`chargement de ${formatBytes(contentLength)} dans un jeu incrémental`)
     const result = (await axios({
       method: 'post',
       url: `api/v1/datasets/${processingConfig.dataset.id}/_bulk_lines?sep=${processingConfig.separator}`,
@@ -120,9 +135,8 @@ exports.run = async ({ pluginConfig, processingConfig, processingId, tmpDir, axi
     if (processingConfig.dataset && processingConfig.dataset.title) formData.append('title', processingConfig.dataset.title)
     formData.append('file', fs.createReadStream(tmpFile), { filename })
     if (processingConfig.encoding?.length) formData.append('file_encoding', processingConfig.encoding)
-    formData.getLength = util.promisify(formData.getLength)
-    const contentLength = await formData.getLength()
-    await log.info(`chargement de ${displayBytes(contentLength)}`)
+    const contentLength = await getContentLength(formData)
+    await log.info(`chargement de ${formatBytes(contentLength)}`)
     const dataset = (await axios({
       method: 'post',
       url: (processingConfig.dataset && processingConfig.dataset.id) ? `api/v1/datasets/${processingConfig.dataset.id}` : 'api/v1/datasets',
