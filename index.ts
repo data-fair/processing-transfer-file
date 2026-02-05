@@ -33,9 +33,9 @@ const fetchHTTP = async (processingConfig: ProcessingConfig, tmpFile: string, ax
 
 const fetchSFTP = async (processingConfig: ProcessingConfig, tmpFile: string) => {
   const url = new URL(processingConfig.url)
-  const SFTPClient = require('ssh2-sftp-client')
+  const { default: SFTPClient } = await import('ssh2-sftp-client')
   const sftp = new SFTPClient()
-  await sftp.connect({ host: url.hostname, port: url.port, username: processingConfig.username, password: processingConfig.password })
+  await sftp.connect({ host: url.hostname, port: Number(url.port), username: processingConfig.username, password: processingConfig.password })
   await sftp.get(url.pathname, tmpFile)
   return processingConfig.filename || decodeURIComponent(path.basename(url.pathname))
 }

@@ -8,6 +8,8 @@
     "lint": "eslint .",
     "lint-fix": "eslint --fix .",
     "build-types": "export NODE_OPTIONS='--experimental-strip-types' && df-build-types ./",
+    "test-deps": "docker compose -f test-it/docker-compose.yml up -d",
+    "stop-test-deps": "docker compose -f test-it/docker-compose.yml stop",
     "test-base": "NODE_ENV=test node --experimental-strip-types --test-force-exit --test-concurrency=1 --test --test-reporter=spec --test-reporter-destination=stdout",
     "test": "npm run test-base test-it/*.ts"
   },
@@ -34,11 +36,13 @@
     "@types/fs-extra": "^11.0.4",
     "@types/ftp": "^0.3.36",
     "@types/node": "^25.2.0",
+    "@types/ssh2-sftp-client": "^9.0.6",
     "config": "^4.2.0",
     "debug": "^4.4.3",
     "eslint": "^9.39.2",
     "husky": "^9.1.7",
     "neostandard": "^0.12.2",
+    "nock": "^14.0.10",
     "typescript": "^5.9.3",
     "ws": "^8.19.0"
   },
