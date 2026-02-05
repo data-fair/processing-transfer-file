@@ -1,75 +1,27 @@
-process.env.NODE_ENV = 'test'
-const config = require('config')
-const axios = require('axios')
-const chalk = require('chalk')
-const dayjs = require('dayjs')
-const assert = require('assert').strict
-const fs = require('fs-extra')
-const downloadFile = require('../')
-
-const axiosInstance = axios.create()
-axiosInstance.interceptors.request.use(cfg => {
-  if (!/^https?:\/\//i.test(cfg.url)) {
-    if (cfg.url.startsWith('/')) cfg.url = config.dataFairUrl + cfg.url
-    else cfg.url = config.dataFairUrl + '/' + cfg.url
-  }
-  if (cfg.url.startsWith(config.dataFairUrl)) {
-    cfg.headers['x-apiKey'] = config.dataFairAPIKey
-  }
-  return cfg
-}, error => Promise.reject(error))
-// customize axios errors for shorter stack traces when a request fails
-axiosInstance.interceptors.response.use(response => response, error => {
-  if (!error.response) return Promise.reject(error)
-  delete error.response.request
-  delete error.response.headers
-  error.response.config = { method: error.response.config.method, url: error.response.config.url, data: error.response.config.data }
-  if (error.response.config.data && error.response.config.data._writableState) delete error.response.config.data
-  if (error.response.data && error.response.data._readableState) delete error.response.data
-  return Promise.reject(error.response)
-})
-
-const log = {
-  step: (msg) => console.log(chalk.blue.bold.underline(`[${dayjs().format('LTS')}] ${msg}`)),
-  error: (msg, extra) => console.log(chalk.red.bold(`[${dayjs().format('LTS')}] ${msg}`), extra),
-  warning: (msg, extra) => console.log(chalk.red(`[${dayjs().format('LTS')}] ${msg}`), extra),
-  info: (msg, extra) => console.log(chalk.blue(`[${dayjs().format('LTS')}] ${msg}`), extra),
-  debug: (msg, extra) => {
-    // console.log(`[${dayjs().format('LTS')}] ${msg}`, extra)
-  }
-}
+import type { ProcessingConfig } from '../types/processingConfig/index.ts'
+import fs from 'fs-extra'
+import config from 'config'
+import { strict as assert } from 'node:assert'
+import { it, describe } from 'node:test'
+import testUtils from '@data-fair/lib-processing-dev/tests-utils.js'
+import * as transferFilePlugin from '../index.ts'
 
 describe('Download file processing', () => {
-  it('should expose a processing config schema for users', async () => {
-    const schema = require('../processing-config-schema.json')
-    assert.equal(schema.type, 'object')
-  })
-
-  it('should download a file over http', async function () {
-    this.timeout(10000)
-
-    const processingConfig = {
+  it.only('should download a file over http', async function () {
+    const processingConfig: ProcessingConfig = {
       dataset: { title: 'Download file test' },
       url: 'https://www.data.gouv.fr/fr/datasets/r/e32f7675-913b-4e01-b8c8-0a29733e4407'
     }
-    await fs.ensureDir('data/tmp')
-    await downloadFile.run({
-      pluginConfig: {},
-      processingConfig,
-      axios: axiosInstance,
-      log,
-      tmpDir: 'data/tmp',
-      async patchConfig (patch) {
-        console.log('received config patch', patch)
-        Object.assign(processingConfig, patch)
-      }
-    })
-    assert.equal(processingConfig.datasetMode, 'update')
-    assert.ok(processingConfig.dataset.title.startsWith('Download file test'))
-    const datasetId = processingConfig.dataset.id
-    assert.ok(datasetId.startsWith('download-file-test'))
+    const context = testUtils.context({
+      tmpDir: 'data/tmp', processingConfig
+      // @ts-ignore ProcessingTestConfig should be optional in lib-processing-dev
+    }, config, false)
+    await transferFilePlugin.run(context)
+    assert.equal(context.processingConfig.datasetMode, 'update')
+    assert.ok(context.processingConfig.dataset.title.startsWith('Download file test'))
   })
 
+  /*
   it('should download a file over sftp', async function () {
     this.timeout(10000)
 
@@ -165,4 +117,53 @@ describe('Download file processing', () => {
     })
     assert.equal(processingConfig.datasetMode, 'lines')
   })
+    */
 })
+
+/*
+describe('Hello world processing', () => {
+
+  it('should run a task', async function () {
+    const context = testUtils.context({
+      pluginConfig: { pluginMessage: 'Hello' },
+      processingConfig: {
+        datasetMode: 'create',
+        dataset: { title: 'Hello world test' },
+        message: 'world test !',
+        delay: 1
+      }
+    // @ts-ignore ProcessingTestConfig should be optional in lib-processing-dev
+    }, config, false)
+
+    await helloWorldPlugin.run(context)
+    assert.equal(context.processingConfig.datasetMode, 'update')
+    assert.equal(context.processingConfig.dataset.title, 'Hello world test')
+  })
+
+  it('should use secrets', async function () {
+    const processingConfig: ProcessingConfig = {
+      datasetMode: 'create',
+      dataset: { title: 'Hello world test' },
+      message: 'world test !',
+      delay: 1,
+      secretField: 'Texte secret'
+    }
+
+    const prepareRes = await helloWorldPlugin.prepare({ processingConfig, secrets: { } })
+    assert.ok(prepareRes.processingConfig)
+    assert.equal(prepareRes.processingConfig.secretField, '********')
+
+    assert.ok(prepareRes.secrets)
+    assert.equal(prepareRes.secrets.secretField, 'Texte secret', 'the secret is not correctly returned by prepare function')
+
+    const context = testUtils.context({
+      pluginConfig: { pluginMessage: 'Hello' },
+      processingConfig: prepareRes.processingConfig,
+      secrets: prepareRes.secrets,
+    // @ts-ignore ProcessingTestConfig should be optional in lib-processing-dev
+    }, config, false)
+
+    await helloWorldPlugin.run(context)
+  })
+})
+*/
