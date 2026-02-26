@@ -3,7 +3,7 @@ import type { ProcessingConfig } from './types/processingConfig/index.ts'
 
 export const run = async (context: ProcessingContext<ProcessingConfig>) => {
   const { run } = await import('./lib/transfer.ts')
-  await run(context)
+  return await run(context)
 }
 
 export const prepare: PrepareFunction<ProcessingConfig> = async ({ processingConfig, secrets }) => {

@@ -116,7 +116,7 @@
         "filename": {
           "title": "Nom du fichier",
           "type": "string",
-          "description": "Ce nom apparaitra lors du téléchargement du fichier source du jeu de données. Par défaut, il est déduit du serveur ftp/sftp ou depuis l'url. Définir un nom de fichier peux résoudre les erreurs `400 - .... type is not supported (/api/v1/datasets)`"
+          "description": "Ce nom apparaîtra lors du téléchargement du fichier source du jeu de données. Par défaut, il est déduit du serveur ftp/sftp ou depuis l'url. Définir un nom de fichier peux résoudre les erreurs `400 - .... type is not supported (/api/v1/datasets)`"
         },
         "encoding": {
           "title": "Encodage du fichier",
@@ -126,6 +126,11 @@
         "ignoreFirstLines": {
           "title": "Ignorer les N première lignes",
           "type": "integer"
+        },
+        "processAndDelete": {
+          "type": "boolean",
+          "title": "Supprimer le fichier source après import (FTP/SFTP uniquement)",
+          "description": "Si activé : supprime l'exécution de l'historique des exécutions si le fichier n'existe pas sur le serveur, sinon ça supprime le fichier du serveur FTP/SFTP après l'import (n'a pas d'effet pour HTTP)"
         }
       }
     }
