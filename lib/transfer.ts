@@ -13,7 +13,7 @@ import { exec as execCb } from 'node:child_process'
 const exec = promisify(execCb)
 
 class FileNotFoundError extends Error {
-  constructor(message: string) {
+  constructor (message: string) {
     super(message)
     this.name = 'FileNotFoundError'
   }
@@ -172,7 +172,7 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
     }
   } catch (err: any) {
     if (err instanceof FileNotFoundError && processingConfig.processAndDelete) {
-      await log.warning(`fichier non trouvé, exécution ignorée`)
+      await log.warning('fichier non trouvé, exécution ignorée')
       return { deleteOnComplete: true }
     }
     throw err
@@ -229,7 +229,7 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
   }
 
   if (processingConfig.processAndDelete) {
-    await log.info(`suppression du fichier source`)
+    await log.info('suppression du fichier source')
     await deleteRemoteFile(processingConfig, secrets)
   }
 }
