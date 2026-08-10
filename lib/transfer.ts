@@ -42,52 +42,68 @@ const fetchHTTP = async (processingConfig: ProcessingConfig, secrets: Processing
   if (res.request && res.request.res && res.request.res.responseUrl) return decodeURIComponent(path.parse(res.request.res.responseUrl).base)
 }
 
-const fetchSFTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets'], tmpFile: string) => {
+// open an SFTP connection. Download and deletion each open their own: the
+// upload to data-fair happens in between and could outlive the session.
+// Whoever opens one is responsible for closing it (see the finally blocks).
+const connectSFTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets']) => {
   const url = new URL(processingConfig.url)
   const { default: SFTPClient } = await import('ssh2-sftp-client')
   const sftp = new SFTPClient()
-  const password = secrets?.password ?? processingConfig.password
-  const privateKey = secrets?.sshKey ?? processingConfig.sshKey
+  await sftp.connect({
+    host: url.hostname,
+    port: url.port ? Number(url.port) : undefined,
+    username: processingConfig.username,
+    password: secrets?.password ?? processingConfig.password,
+    privateKey: secrets?.sshKey ?? processingConfig.sshKey
+  })
+  return sftp
+}
+
+const fetchSFTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets'], tmpFile: string) => {
+  const url = new URL(processingConfig.url)
+  const sftp = await connectSFTP(processingConfig, secrets)
   try {
-    await sftp.connect({
-      host: url.hostname,
-      port: Number(url.port),
-      username: processingConfig.username,
-      password,
-      privateKey
-    })
     await sftp.get(url.pathname, tmpFile)
   } catch (err: any) {
     if (err.message?.toLowerCase().includes('no such file') || err.code === 'ENOENT') {
       throw new FileNotFoundError(`File not found: ${url.pathname}`)
     }
     throw err
+  } finally {
+    await sftp.end()
   }
   return processingConfig.filename || decodeURIComponent(path.basename(url.pathname))
 }
 
-const fetchFTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets'], tmpFile: string) => {
+// same as connectSFTP for the plain FTP protocols
+const connectFTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets']) => {
   const url = new URL(processingConfig.url)
   const { default: FTPClient } = await import('ftp')
   const ftp = new FTPClient()
-  const password = secrets?.password ?? processingConfig.password
-  ftp.connect({ host: url.hostname, port: Number(url.port), user: processingConfig.username, password })
+  ftp.connect({ host: url.hostname, port: url.port ? Number(url.port) : undefined, user: processingConfig.username, password: secrets?.password ?? processingConfig.password })
   await eventPromise(ftp, 'ready')
-  let stream
+  return ftp
+}
+
+const fetchFTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets'], tmpFile: string) => {
+  const url = new URL(processingConfig.url)
+  const ftp = await connectFTP(processingConfig, secrets)
   try {
-    stream = await new Promise<NodeJS.ReadableStream>((resolve, reject) => {
+    const stream = await new Promise<NodeJS.ReadableStream>((resolve, reject) => {
       ftp.get(url.pathname, (err, stream) => {
         if (err) reject(err)
         else resolve(stream)
       })
     })
+    await pipeline(stream, fs.createWriteStream(tmpFile))
   } catch (err: any) {
     if (err.message?.toLowerCase().includes('no such file') || err.message?.toLowerCase().includes('not found')) {
       throw new FileNotFoundError(`File not found: ${url.pathname}`)
     }
     throw err
+  } finally {
+    ftp.end()
   }
-  await pipeline(stream, fs.createWriteStream(tmpFile))
   return processingConfig.filename || decodeURIComponent(path.basename(url.pathname))
 }
 
@@ -103,24 +119,26 @@ const getContentLength = (formData: FormData) => {
 export const deleteRemoteFile = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets']) => {
   const url = new URL(processingConfig.url)
   const remotePath = url.pathname
-  const password = secrets?.password ?? processingConfig.password
 
   if (url.protocol === 'sftp:') {
-    const { default: SFTPClient } = await import('ssh2-sftp-client')
-    const sftp = new SFTPClient()
-    await sftp.connect({ host: url.hostname, port: Number(url.port), username: processingConfig.username, password })
-    await sftp.delete(remotePath)
+    const sftp = await connectSFTP(processingConfig, secrets)
+    try {
+      await sftp.delete(remotePath)
+    } finally {
+      await sftp.end()
+    }
   } else if (url.protocol === 'ftp:' || url.protocol === 'ftps:') {
-    const { default: FTPClient } = await import('ftp')
-    const ftp = new FTPClient()
-    ftp.connect({ host: url.hostname, port: Number(url.port), user: processingConfig.username, password })
-    await eventPromise(ftp, 'ready')
-    await new Promise<void>((resolve, reject) => {
-      ftp.delete(remotePath, (err) => {
-        if (err) reject(err)
-        else resolve()
+    const ftp = await connectFTP(processingConfig, secrets)
+    try {
+      await new Promise<void>((resolve, reject) => {
+        ftp.delete(remotePath, (err) => {
+          if (err) reject(err)
+          else resolve()
+        })
       })
-    })
+    } finally {
+      ftp.end()
+    }
   }
 }
 
