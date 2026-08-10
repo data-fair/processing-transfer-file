@@ -7,6 +7,7 @@
   "scripts": {
     "lint": "eslint .",
     "lint-fix": "eslint --fix .",
+    "prepare": "husky || true",
     "build-types": "export NODE_OPTIONS='--experimental-strip-types' && df-build-types ./",
     "test-deps": "docker compose -f test-it/docker-compose.yml up -d",
     "stop-test-deps": "docker compose -f test-it/docker-compose.yml stop",
