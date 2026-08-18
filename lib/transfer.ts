@@ -39,7 +39,10 @@ const fetchHTTP = async (processingConfig: ProcessingConfig, secrets: Processing
     if (res.headers['content-disposition'].match(/filename="(.*)"/)) return res.headers['content-disposition'].match(/filename="(.*)"/)[1]
     if (res.headers['content-disposition'].match(/filename=(.*)/)) return res.headers['content-disposition'].match(/filename=(.*)/)[1]
   }
-  if (res.request && res.request.res && res.request.res.responseUrl) return decodeURIComponent(path.parse(res.request.res.responseUrl).base)
+  if (res.request && res.request.res && res.request.res.responseUrl) {
+    const responseUrl = new URL(res.request.res.responseUrl)
+    return decodeURIComponent(path.parse(responseUrl.pathname).base)
+  }
 }
 
 // open an SFTP connection. Download and deletion each open their own: the
@@ -159,7 +162,7 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
   await fs.ensureFile(tmpFile)
 
   const url = new URL(processingConfig.url)
-  let filename = decodeURIComponent(path.parse(processingConfig.url).base)
+  let filename = decodeURIComponent(path.parse(url.pathname).base)
   try {
     if (url.protocol === 'http:' || url.protocol === 'https:') {
       filename = await fetchHTTP(processingConfig, secrets, tmpFile, axios) || filename
