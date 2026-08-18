@@ -22,7 +22,7 @@ describe('Download file processing', () => {
   it('should download a file over http', async function () {
     nock('https://www.data.gouv.fr')
       .get('/fr/datasets/r/e32f7675-913b-4e01-b8c8-0a29733e4407')
-      .reply(200, fs.readFileSync('test-it/resources/sample.csv', 'utf8'))
+      .reply(200, fs.readFileSync('test-it/resources/sample.csv', 'utf8'), { 'content-disposition': 'attachment; filename="sample.csv"' })
     const processingConfig: ProcessingConfig = {
       dataset: { title: 'Download file test' },
       url: 'https://www.data.gouv.fr/fr/datasets/r/e32f7675-913b-4e01-b8c8-0a29733e4407'
