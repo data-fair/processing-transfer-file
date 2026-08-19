@@ -35,9 +35,11 @@ const fetchHTTP = async (processingConfig: ProcessingConfig, secrets: Processing
   await pipeline(res.data, fs.createWriteStream(tmpFile))
   if (processingConfig.filename) return processingConfig.filename
   if (res.headers['content-disposition'] && res.headers['content-disposition'].includes('filename=')) {
-    if (res.headers['content-disposition'].match(/filename=(.*);/)) return res.headers['content-disposition'].match(/filename=(.*);/)[1]
-    if (res.headers['content-disposition'].match(/filename="(.*)"/)) return res.headers['content-disposition'].match(/filename="(.*)"/)[1]
-    if (res.headers['content-disposition'].match(/filename=(.*)/)) return res.headers['content-disposition'].match(/filename=(.*)/)[1]
+    const contentDisposition = res.headers['content-disposition']
+    const quoted = contentDisposition.match(/filename="([^"]*)"/)
+    if (quoted) return quoted[1]
+    const plain = contentDisposition.match(/filename=([^;]*)/)
+    if (plain) return plain[1].trim()
   }
   if (res.request && res.request.res && res.request.res.responseUrl) {
     const responseUrl = new URL(res.request.res.responseUrl)
@@ -151,7 +153,13 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
 
   if (processingConfig.datasetMode === 'update') {
     await log.step('Vérification du jeu de données')
-    const dataset = (await axios.get(`api/v1/datasets/${processingConfig.dataset.id}`)).data
+    let dataset: any
+    try {
+      dataset = (await axios.get(`api/v1/datasets/${processingConfig.dataset.id}`)).data
+    } catch (err: any) {
+      if (err.response?.status === 404 || err.status === 404) throw new Error(`le jeu de données n'existe pas, id${processingConfig.dataset.id}`)
+      throw err
+    }
     if (!dataset) throw new Error(`le jeu de données n'existe pas, id${processingConfig.dataset.id}`)
     await log.info(`le jeu de donnée existe, id="${dataset.id}", title="${dataset.title}"`)
   }
@@ -167,9 +175,9 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
     if (url.protocol === 'http:' || url.protocol === 'https:') {
       filename = await fetchHTTP(processingConfig, secrets, tmpFile, axios) || filename
     } else if (url.protocol === 'sftp:') {
-      await fetchSFTP(processingConfig, secrets, tmpFile)
+      filename = await fetchSFTP(processingConfig, secrets, tmpFile)
     } else if (url.protocol === 'ftp:' || url.protocol === 'ftps:') {
-      await fetchFTP(processingConfig, secrets, tmpFile)
+      filename = await fetchFTP(processingConfig, secrets, tmpFile)
     } else {
       throw new Error(`protocole non supporté "${url.protocol}"`)
     }
