@@ -124,7 +124,7 @@
           "description": "Laissez vide pour une détection automatique de celui-ci"
         },
         "ignoreFirstLines": {
-          "title": "Ignorer les N première lignes",
+          "title": "Ignorer les N premières lignes",
           "type": "integer"
         },
         "processAndDelete": {
