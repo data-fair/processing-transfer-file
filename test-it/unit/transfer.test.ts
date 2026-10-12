@@ -63,6 +63,18 @@ class MockFTPClient extends EventEmitter {
 }
 mock.module('ftp', { exports: { default: MockFTPClient } })
 
+// no DNS in unit tests: test.com resolves to a documentation address, other hosts are refused
+const resolvedHosts: string[] = []
+mock.module('@data-fair/lib-node/ssrf.js', {
+  namedExports: {
+    resolvePublicAddress: async (host: string) => {
+      resolvedHosts.push(host)
+      if (host === 'test.com') return '203.0.113.10'
+      throw new Error(`connection to ${host} refused, it is not a public address`)
+    }
+  }
+})
+
 const resetState = () => {
   sftpState.getError = null
   sftpState.deleteError = null
@@ -504,7 +516,7 @@ describe('run over sftp', () => {
     await transferFilePlugin.run(context)
     assert.equal(sftpState.getCalls.length, 1)
     assert.equal(sftpState.getCalls[0].remotePath, '/files/data.csv')
-    assert.equal(sftpState.connectOptions.host, 'test.com')
+    assert.equal(sftpState.connectOptions.host, '203.0.113.10')
     assert.equal(sftpState.connectOptions.port, 2222)
     assert.equal(sftpState.connectOptions.username, 'user')
     assert.equal(sftpState.connectOptions.password, 'pass')
@@ -589,7 +601,7 @@ describe('run over ftp', () => {
     await transferFilePlugin.run(context)
     assert.equal(ftpState.getCalls.length, 1)
     assert.equal(ftpState.getCalls[0], '/files/data.csv')
-    assert.equal(ftpState.connectOptions.host, 'test.com')
+    assert.equal(ftpState.connectOptions.host, '203.0.113.10')
     assert.equal(ftpState.connectOptions.port, 2121)
     assert.equal(ftpState.connectOptions.user, 'user')
     assert.equal(ftpState.ends, 1)
@@ -672,5 +684,34 @@ describe('deleteRemoteFile', () => {
     await transferLib.deleteRemoteFile({ url: 'https://test.com/files/data.csv' } as any, {})
     assert.equal(sftpState.deleteCalls.length, 0)
     assert.equal(ftpState.deleteCalls.length, 0)
+  })
+})
+
+describe('ssrf protection', () => {
+  beforeEach(() => {
+    resetState()
+    nock.cleanAll()
+  })
+
+  it('should refuse to connect to a non public sftp host', async () => {
+    const { context } = makeContext({ processingConfig: { url: 'sftp://localhost/files/data.csv' } })
+    await assert.rejects(() => transferFilePlugin.run(context), /not a public address/)
+    assert.equal(sftpState.connectOptions, null)
+  })
+
+  it('should refuse to connect to a non public ftp host', async () => {
+    const { context } = makeContext({ processingConfig: { url: 'ftp://localhost/files/data.csv' } })
+    await assert.rejects(() => transferFilePlugin.run(context), /not a public address/)
+    assert.equal(ftpState.connectOptions, null)
+  })
+
+  it('should open the passive data connection on the checked address, not the one sent by the server', () => {
+    const calls: any[] = []
+    const ftp: any = { _pasvConnect (ip: string, port: number, cb: any) { calls.push({ ip, port, self: this }); cb() } }
+    transferLib.pinPasvAddress(ftp, '203.0.113.10')
+    ftp._pasvConnect('10.0.0.1', 2000, () => {})
+    assert.equal(calls[0].ip, '203.0.113.10')
+    assert.equal(calls[0].port, 2000)
+    assert.equal(calls[0].self, ftp)
   })
 })

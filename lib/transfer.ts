@@ -8,9 +8,9 @@ import { promisify } from 'node:util'
 import FormData from 'form-data'
 import path from 'node:path'
 import fs from 'fs-extra'
-import { exec as execCb } from 'node:child_process'
+import { execFile as execFileCb } from 'node:child_process'
 
-const exec = promisify(execCb)
+const execFile = promisify(execFileCb)
 
 class FileNotFoundError extends Error {
   constructor (message: string) {
@@ -53,9 +53,11 @@ const fetchHTTP = async (processingConfig: ProcessingConfig, secrets: Processing
 const connectSFTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets']) => {
   const url = new URL(processingConfig.url)
   const { default: SFTPClient } = await import('ssh2-sftp-client')
+  const { resolvePublicAddress } = await import('@data-fair/lib-node/ssrf.js')
   const sftp = new SFTPClient()
   await sftp.connect({
-    host: url.hostname,
+    // the host is chosen by the user: connect to its checked public address (SSRF protection)
+    host: await resolvePublicAddress(url.hostname),
     port: url.port ? Number(url.port) : undefined,
     username: processingConfig.username,
     password: secrets?.password ?? processingConfig.password,
@@ -80,12 +82,25 @@ const fetchSFTP = async (processingConfig: ProcessingConfig, secrets: Processing
   return processingConfig.filename || decodeURIComponent(path.basename(url.pathname))
 }
 
+// in passive mode the server chooses the address of the data connection (PASV response),
+// ignore it and always connect to the checked address of the control connection
+export const pinPasvAddress = (ftp: any, host: string) => {
+  const pasvConnect = ftp._pasvConnect
+  ftp._pasvConnect = function (_ip: string, port: number, cb: (err?: Error, sock?: any) => void) {
+    return pasvConnect.call(this, host, port, cb)
+  }
+}
+
 // same as connectSFTP for the plain FTP protocols
 const connectFTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets']) => {
   const url = new URL(processingConfig.url)
   const { default: FTPClient } = await import('ftp')
+  const { resolvePublicAddress } = await import('@data-fair/lib-node/ssrf.js')
+  // the host is chosen by the user: connect to its checked public address (SSRF protection)
+  const host = await resolvePublicAddress(url.hostname)
   const ftp = new FTPClient()
-  ftp.connect({ host: url.hostname, port: url.port ? Number(url.port) : undefined, user: processingConfig.username, password: secrets?.password ?? processingConfig.password })
+  pinPasvAddress(ftp, host)
+  ftp.connect({ host, port: url.port ? Number(url.port) : undefined, user: processingConfig.username, password: secrets?.password ?? processingConfig.password })
   await eventPromise(ftp, 'ready')
   return ftp
 }
@@ -196,7 +211,7 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
   await log.info(`le fichier a été téléchargé (${filename})`)
 
   if (processingConfig.ignoreFirstLines) {
-    await exec(`sed -i 1,${processingConfig.ignoreFirstLines}d ${tmpFile}`)
+    await execFile('sed', ['-i', `1,${Number(processingConfig.ignoreFirstLines)}d`, tmpFile])
   }
 
   await log.step('Chargement vers le jeu de données')
