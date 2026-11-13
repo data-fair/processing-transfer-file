@@ -1,13 +1,15 @@
 {
   "type": "object",
-  "x-display": "tabs",
+  "layout": "tabs",
   "required": ["datasetMode"],
   "allOf": [
     {
-      "title": "Jeu de données",
+      "title": "Dataset",
+      "x-i18n-title": { "fr": "Jeu de données" },
       "oneOf": [
         {
-          "title": "Créer un jeu de données",
+          "title": "Dataset creation",
+          "x-i18n-title": { "fr": "Créer un jeu de données", "en": "Create a dataset" },
           "required": ["dataset"],
           "properties": {
             "datasetMode": {
@@ -20,27 +22,34 @@
               "properties": {
                 "title": {
                   "type": "string",
-                  "title": "Titre (laissez vide pour utiliser le nom de fichier téléchargé)"
+                  "title": "Dataset title",
+                  "x-i18n-title": {
+                    "fr": "Titre (laissez vide pour utiliser le nom du fichier téléchargé)",
+                    "en": "Title (leave empty to use the downloaded file name)"
+                  }
                 }
               }
             }
           }
         },
         {
-          "title": "Mettre à jour un jeu de données (fichier)",
+          "title": "Dataset file update",
+          "x-i18n-title": { "fr": "Mettre à jour un jeu de données (fichier)", "en": "Update a dataset (file)" },
           "required": ["dataset"],
           "properties": {
             "datasetMode": { "type": "string", "const": "update" },
             "dataset": {
               "type": "object",
-              "title": "Jeu de données",
+              "title": "Dataset",
+              "x-i18n-title": { "fr": "Jeu de données" },
               "properties": {
-                "id": { "type": "string", "title": "Identifiant" },
-                "title": { "type": "string", "title": "Titre" }
+                "id": { "type": "string", "title": "Identifier", "x-i18n-title": { "fr": "Identifiant" } },
+                "title": { "type": "string", "title": "Title", "x-i18n-title": { "fr": "Titre" } }
               },
               "layout": {
                 "getItems": {
-                  "url": "${context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&${context.ownerFilter}&size=100",
+                  "url": "${context.dataFairUrl}/api/v1/datasets?select=id,title&${context.ownerFilter}&size=50",
+                  "qSearchParam": "q",
                   "itemsResults": "data.results",
                   "itemTitle": "item.title",
                   "itemKey": "item.id"
@@ -50,20 +59,26 @@
           }
         },
         {
-          "title": "Mettre à jour des lignes d'un jeu de données (incrémental)",
+          "title": "Dataset lines update",
+          "x-i18n-title": {
+            "fr": "Mettre à jour des lignes d'un jeu de données (incrémental)",
+            "en": "Update the lines of a dataset (incremental)"
+          },
           "required": ["dataset", "separator"],
           "properties": {
             "datasetMode": { "type": "string", "const": "lines" },
             "dataset": {
               "type": "object",
-              "title": "Jeu de données",
+              "title": "Dataset",
+              "x-i18n-title": { "fr": "Jeu de données" },
               "properties": {
-                "id": { "type": "string", "title": "Identifiant" },
-                "title": { "type": "string", "title": "Titre" }
+                "id": { "type": "string", "title": "Identifier", "x-i18n-title": { "fr": "Identifiant" } },
+                "title": { "type": "string", "title": "Title", "x-i18n-title": { "fr": "Titre" } }
               },
               "layout": {
                 "getItems": {
-                  "url": "${context.dataFairUrl}/api/v1/datasets?q={q}&select=id,title&rest=true&${context.ownerFilter}&size=100",
+                  "url": "${context.dataFairUrl}/api/v1/datasets?select=id,title&rest=true&${context.ownerFilter}&size=50",
+                  "qSearchParam": "q",
                   "itemsResults": "data.results",
                   "itemTitle": "item.title",
                   "itemKey": "item.id"
@@ -72,25 +87,36 @@
             },
             "separator": {
               "type": "string",
-              "title": "Séparateur",
+              "title": "Separator",
+              "x-i18n-title": { "fr": "Séparateur" },
               "default": ",",
-              "enum": [",", ";", "-", "/", "|"]
+              "oneOf": [
+                { "const": ",", "title": "Comma (,)", "x-i18n-title": { "fr": "Virgule (,)" } },
+                { "const": ";", "title": "Semicolon (;)", "x-i18n-title": { "fr": "Point-virgule (;)" } },
+                { "const": "-", "title": "Hyphen (-)", "x-i18n-title": { "fr": "Tiret (-)" } },
+                { "const": "/", "title": "Slash (/)", "x-i18n-title": { "fr": "Barre oblique (/)" } },
+                { "const": "|", "title": "Pipe (|)", "x-i18n-title": { "fr": "Barre verticale (|)" } }
+              ]
             }
           }
         }
       ]
     },
     {
-      "title": "Paramètres",
+      "title": "Parameters",
+      "x-i18n-title": { "fr": "Paramètres" },
       "required": ["url"],
       "properties": {
         "url": {
-          "title": "URL source",
+          "title": "Source URL",
+          "x-i18n-title": { "fr": "URL source" },
           "type": "string",
-          "description": "les protocoles supportés sont HTTP, HTTPS, FTP et SFTP"
+          "description": "Supported protocols: HTTP, HTTPS, FTP and SFTP.",
+          "x-i18n-description": { "fr": "Les protocoles supportés sont HTTP, HTTPS, FTP et SFTP." }
         },
         "username": {
-          "title": "Utilisateur",
+          "title": "User",
+          "x-i18n-title": { "fr": "Utilisateur" },
           "type": "string",
           "layout": {
             "props": {
@@ -99,7 +125,8 @@
           }
         },
         "password": {
-          "title": "Mot de passe",
+          "title": "Password",
+          "x-i18n-title": { "fr": "Mot de passe" },
           "type": "string",
           "layout": {
             "props": {
@@ -109,28 +136,43 @@
           }
         },
         "sshKey": {
-          "title": "Clé SSH privée (uniquement dans le cas d'une URL de type SFTP)",
+          "title": "SSH private key",
+          "x-i18n-title": {
+            "fr": "Clé SSH privée (uniquement dans le cas d'une URL de type SFTP)",
+            "en": "SSH private key (SFTP URLs only)"
+          },
           "type": "string",
           "layout": "textarea"
         },
         "filename": {
-          "title": "Nom du fichier",
+          "title": "File name",
+          "x-i18n-title": { "fr": "Nom du fichier" },
           "type": "string",
-          "description": "Ce nom apparaîtra lors du téléchargement du fichier source du jeu de données. Par défaut, il est déduit du serveur ftp/sftp ou depuis l'url. Définir un nom de fichier peux résoudre les erreurs `400 - .... type is not supported (/api/v1/datasets)`"
+          "description": "This name appears when the source file of the dataset is downloaded. By default it is read from the FTP/SFTP server or from the URL. Setting a file name can solve the `400 - .... type is not supported (/api/v1/datasets)` errors.",
+          "x-i18n-description": {
+            "fr": "Ce nom apparaîtra lors du téléchargement du fichier source du jeu de données. Par défaut, il est déduit du serveur FTP/SFTP ou de l'URL. Définir un nom de fichier peut résoudre les erreurs `400 - .... type is not supported (/api/v1/datasets)`."
+          }
         },
         "encoding": {
-          "title": "Encodage du fichier",
+          "title": "File encoding",
+          "x-i18n-title": { "fr": "Encodage du fichier" },
           "type": "string",
-          "description": "Laissez vide pour une détection automatique de celui-ci"
+          "description": "Leave empty to detect it automatically.",
+          "x-i18n-description": { "fr": "Laissez vide pour une détection automatique de celui-ci." }
         },
         "ignoreFirstLines": {
-          "title": "Ignorer les N premières lignes",
+          "title": "Ignore the first N lines",
+          "x-i18n-title": { "fr": "Ignorer les N premières lignes" },
           "type": "integer"
         },
         "processAndDelete": {
           "type": "boolean",
-          "title": "Supprimer le fichier source après import (FTP/SFTP uniquement)",
-          "description": "Si activé : supprime l'exécution de l'historique des exécutions si le fichier n'existe pas sur le serveur, sinon ça supprime le fichier du serveur FTP/SFTP après l'import (n'a pas d'effet pour HTTP)"
+          "title": "Delete the source file after the import (FTP/SFTP only)",
+          "x-i18n-title": { "fr": "Supprimer le fichier source après import (FTP/SFTP uniquement)" },
+          "description": "When enabled:\n- if the file does not exist on the server, the run is skipped and removed from the run history;\n- otherwise the file is deleted from the FTP/SFTP server after the import (nothing is deleted over HTTP).",
+          "x-i18n-description": {
+            "fr": "Si activé :\n- si le fichier n'existe pas sur le serveur, l'exécution est ignorée et supprimée de l'historique des exécutions ;\n- sinon le fichier est supprimé du serveur FTP/SFTP après l'import (rien n'est supprimé en HTTP)."
+          }
         }
       }
     }
