@@ -13,7 +13,7 @@ jobs:
     if: github.ref_type == 'tag' && github.event_name == 'push'
     environment: production
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: data-fair/registry/.github/actions/publish-plugin@v0.4.0
         with:
           registry-url: https://koumoul.com/registry
