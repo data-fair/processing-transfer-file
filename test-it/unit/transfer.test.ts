@@ -715,3 +715,71 @@ describe('ssrf protection', () => {
     assert.equal(calls[0].self, ftp)
   })
 })
+
+describe('remote file names', () => {
+  beforeEach(() => {
+    resetState()
+    nock.cleanAll()
+  })
+
+  it('should keep only the base name of a decoded remote name', () => {
+    assert.equal(transferLib.remoteFileName('..%2F..%2Fetc%2Fpasswd'), 'passwd')
+    assert.equal(transferLib.remoteFileName('my%20file.csv'), 'my file.csv')
+  })
+
+  it('should strip the directory part of a content-disposition filename', async () => {
+    nock('https://test.com')
+      .get('/files/file.csv')
+      .reply(200, csv, { 'content-disposition': 'attachment; filename="../../other/run.csv"' })
+    const capturedBodies: any = []
+    nock('http://datafair.test')
+      .post('/api/v1/datasets')
+      .reply(200, function (uri: string, requestBody: any) {
+        capturedBodies.push(requestBody)
+        return { id: 'ds1', title: 'Test dataset' }
+      })
+    const { context } = makeContext()
+    await transferFilePlugin.run(context)
+    assert.ok(capturedBodies[0].includes('filename="run.csv"'))
+  })
+})
+
+describe('data-fair upload', () => {
+  beforeEach(() => {
+    resetState()
+    nock.cleanAll()
+  })
+
+  it('should retry a rate limited upload with a rebuilt body', async () => {
+    nock('https://test.com')
+      .get('/files/file.csv')
+      .reply(200, csv)
+    const capturedBodies: any = []
+    nock('http://datafair.test')
+      .post('/api/v1/datasets/ds1')
+      .reply(429, 'Too Many Requests', { 'retry-after': '0.001' })
+      .post('/api/v1/datasets/ds1')
+      .reply(200, function (uri: string, requestBody: any) {
+        capturedBodies.push(requestBody)
+        return { id: 'ds1', title: 'Test dataset' }
+      })
+    const { context, log } = makeContext({ processingConfig: { datasetMode: 'update', dataset: { id: 'ds1' } } })
+    nock('http://datafair.test').get('/api/v1/datasets/ds1').reply(200, { id: 'ds1', title: 'Test dataset' })
+    await transferFilePlugin.run(context)
+    assert.ok(capturedBodies[0].includes('france'))
+    assert.equal(log.warning.mock.callCount(), 1)
+  })
+
+  it('should not upload anything when the run is stopped during the download', async () => {
+    nock('https://test.com')
+      .get('/files/file.csv')
+      .reply(200, () => {
+        transferFilePlugin.stop()
+        return csv
+      })
+    const { context, patchConfig } = makeContext()
+    await transferFilePlugin.run(context)
+    assert.equal(patchConfig.mock.callCount(), 0)
+    assert.ok(nock.isDone())
+  })
+})

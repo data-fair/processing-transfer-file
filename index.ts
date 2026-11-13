@@ -1,30 +1,25 @@
-import type { PrepareFunction, ProcessingContext } from '@data-fair/lib-common-types/processings.js'
+import type { PrepareFunction, RunFunction } from '@data-fair/lib-common-types/processings.js'
 import type { ProcessingConfig } from './types/processingConfig/index.ts'
 
-export const run = async (context: ProcessingContext<ProcessingConfig>) => {
-  const { run } = await import('./lib/transfer.ts')
-  return await run(context)
+/**
+ * Prepare the processing config (triggered when the config is saved).
+ * Moves the password and the SSH key out of the config and into the secrets store.
+ */
+export const prepare: PrepareFunction<ProcessingConfig> = async (context) => {
+  const prepare = (await import('./lib/prepare.ts')).default
+  return prepare(context)
 }
 
-export const prepare: PrepareFunction<ProcessingConfig> = async ({ processingConfig, secrets }) => {
-  const stars = '********'
-  const password = processingConfig.password
-  if (password && password !== stars) {
-    secrets.password = password
-    processingConfig.password = stars
-  } else if (secrets?.secretField && !password) {
-    delete secrets.secretField
-  }
-  const sshKey = processingConfig.sshKey
-  if (sshKey && sshKey !== stars) {
-    secrets.sshKey = sshKey
-    processingConfig.sshKey = stars
-  } else if (secrets?.sshKey && !sshKey) {
-    delete secrets.sshKey
-  }
+/**
+ * Execute the processing: download a file over HTTP(S), FTP(S) or SFTP and load it
+ * into a data-fair dataset.
+ */
+export const run: RunFunction<ProcessingConfig> = async (context) => {
+  const { run } = await import('./lib/transfer.ts')
+  return run(context)
+}
 
-  return {
-    processingConfig,
-    secrets
-  }
+export const stop = async () => {
+  const { stop } = await import('./lib/transfer.ts')
+  return stop()
 }

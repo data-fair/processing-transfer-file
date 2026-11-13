@@ -19,11 +19,11 @@ describe('prepare', () => {
     assert.equal(result.secrets.password, undefined)
   })
 
-  it('should delete the secretField when there is no password', async () => {
+  it('should delete the password from secrets when the config password is empty', async () => {
     const processingConfig: any = {}
-    const secrets: any = { secretField: 'my-password' }
+    const secrets: any = { password: 'my-password' }
     const result = await transferFilePlugin.prepare({ processingConfig, secrets } as any)
-    assert.equal(result.secrets.secretField, undefined)
+    assert.equal(result.secrets.password, undefined)
   })
 
   it('should mask the sshKey and store it in secrets', async () => {

@@ -15,6 +15,9 @@
     "test": "npm run test-base test-it/*.ts test-it/unit/*.ts",
     "test-coverage": "NODE_ENV=test node --experimental-strip-types --experimental-test-module-mocks --test-force-exit --test-concurrency=1 --test --experimental-test-coverage --test-coverage-include=index.ts --test-coverage-include=lib/**/*.ts --test-coverage-lines=98 --test-coverage-functions=98 --test-coverage-branches=95 --test-reporter=spec test-it/unit/*.ts"
   },
+  "imports": {
+    "#types/*": "./types/*"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/data-fair/processing-transfer-file.git"
@@ -57,7 +60,6 @@
     "ssh2-sftp-client": "^12.0.1"
   },
   "files": [
-    "plugin-config-schema.json",
     "processing-config-schema.json",
     "./index.ts",
     "./lib/**/*"

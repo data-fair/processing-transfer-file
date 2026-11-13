@@ -1,5 +1,5 @@
 import type { ProcessingContext } from '@data-fair/lib-common-types/processings.js'
-import type { ProcessingConfig } from '../types/processingConfig/index.ts'
+import type { ProcessingConfig } from '#types/processingConfig/index.ts'
 
 import { formatBytes } from '@data-fair/lib-utils/format/bytes.js'
 import { eventPromise } from '@data-fair/lib-utils/event-promise.js'
@@ -9,8 +9,16 @@ import FormData from 'form-data'
 import path from 'node:path'
 import fs from 'fs-extra'
 import { execFile as execFileCb } from 'node:child_process'
+import { dfRetry, errorStatus } from './retry.ts'
 
 const execFile = promisify(execFileCb)
+
+let shouldBeStopped = false
+export const stop = async () => { shouldBeStopped = true }
+
+// a name read from the url or sent by the remote server is only kept as a plain
+// file name (no directory part, no traversal once percent-decoded)
+export const remoteFileName = (name: string) => path.basename(decodeURIComponent(name))
 
 class FileNotFoundError extends Error {
   constructor (message: string) {
@@ -21,7 +29,8 @@ class FileNotFoundError extends Error {
 
 const fetchHTTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets'], tmpFile: string, axios: ProcessingContext['axios']) => {
   const password = secrets?.password ?? processingConfig.password
-  const opts: any = { responseType: 'stream', maxRedirects: 4 }
+  // remote host: follow its redirects, and give up on a server that stops answering
+  const opts: any = { responseType: 'stream', maxRedirects: 4, timeout: 60000 }
   if (processingConfig.username && password) {
     opts.auth = { username: processingConfig.username, password }
   }
@@ -29,7 +38,7 @@ const fetchHTTP = async (processingConfig: ProcessingConfig, secrets: Processing
   try {
     res = await axios.get(processingConfig.url, opts)
   } catch (err: any) {
-    if (err.response?.status === 404) throw new FileNotFoundError(`File not found: ${processingConfig.url}`)
+    if (errorStatus(err) === 404) throw new FileNotFoundError(`File not found: ${processingConfig.url}`)
     throw err
   }
   await pipeline(res.data, fs.createWriteStream(tmpFile))
@@ -37,13 +46,13 @@ const fetchHTTP = async (processingConfig: ProcessingConfig, secrets: Processing
   if (res.headers['content-disposition'] && res.headers['content-disposition'].includes('filename=')) {
     const contentDisposition = res.headers['content-disposition']
     const quoted = contentDisposition.match(/filename="([^"]*)"/)
-    if (quoted) return quoted[1]
+    if (quoted) return path.basename(quoted[1])
     const plain = contentDisposition.match(/filename=([^;]*)/)
-    if (plain) return plain[1].trim()
+    if (plain) return path.basename(plain[1].trim())
   }
   if (res.request && res.request.res && res.request.res.responseUrl) {
     const responseUrl = new URL(res.request.res.responseUrl)
-    return decodeURIComponent(path.parse(responseUrl.pathname).base)
+    return remoteFileName(path.parse(responseUrl.pathname).base)
   }
 }
 
@@ -79,7 +88,7 @@ const fetchSFTP = async (processingConfig: ProcessingConfig, secrets: Processing
   } finally {
     await sftp.end()
   }
-  return processingConfig.filename || decodeURIComponent(path.basename(url.pathname))
+  return processingConfig.filename || remoteFileName(path.basename(url.pathname))
 }
 
 // in passive mode the server chooses the address of the data connection (PASV response),
@@ -124,7 +133,7 @@ const fetchFTP = async (processingConfig: ProcessingConfig, secrets: ProcessingC
   } finally {
     ftp.end()
   }
-  return processingConfig.filename || decodeURIComponent(path.basename(url.pathname))
+  return processingConfig.filename || remoteFileName(path.basename(url.pathname))
 }
 
 const getContentLength = (formData: FormData) => {
@@ -164,6 +173,7 @@ export const deleteRemoteFile = async (processingConfig: ProcessingConfig, secre
 
 export const run = async (context: ProcessingContext<ProcessingConfig>) => {
   const { processingConfig, secrets, tmpDir, axios, log, patchConfig } = context
+  shouldBeStopped = false
   await fs.ensureDir(tmpDir)
 
   if (processingConfig.datasetMode === 'update') {
@@ -172,7 +182,7 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
     try {
       dataset = (await axios.get(`api/v1/datasets/${processingConfig.dataset.id}`)).data
     } catch (err: any) {
-      if (err.response?.status === 404 || err.status === 404) throw new Error(`le jeu de données n'existe pas, id${processingConfig.dataset.id}`)
+      if (errorStatus(err) === 404) throw new Error(`le jeu de données n'existe pas, id${processingConfig.dataset.id}`)
       throw err
     }
     if (!dataset) throw new Error(`le jeu de données n'existe pas, id${processingConfig.dataset.id}`)
@@ -185,7 +195,7 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
   await fs.ensureFile(tmpFile)
 
   const url = new URL(processingConfig.url)
-  let filename = decodeURIComponent(path.parse(url.pathname).base)
+  let filename = remoteFileName(path.parse(url.pathname).base)
   try {
     if (url.protocol === 'http:' || url.protocol === 'https:') {
       filename = await fetchHTTP(processingConfig, secrets, tmpFile, axios) || filename
@@ -214,20 +224,34 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
     await execFile('sed', ['-i', `1,${Number(processingConfig.ignoreFirstLines)}d`, tmpFile])
   }
 
+  // a stopped run must not publish a partial file
+  if (shouldBeStopped) {
+    await log.warning('interrompu avant le chargement, le jeu de données n\'est pas modifié')
+    return
+  }
+
   await log.step('Chargement vers le jeu de données')
   if (processingConfig.datasetMode === 'lines') {
-    const formData = new FormData()
-    formData.append('actions', fs.createReadStream(tmpFile), { filename })
-    const contentLength = await getContentLength(formData)
-    await log.info(`chargement de ${formatBytes(contentLength)} dans un jeu incrémental`)
-    const result = (await axios({
-      method: 'post',
-      url: `api/v1/datasets/${processingConfig.dataset.id}/_bulk_lines?sep=${processingConfig.separator}`,
-      data: formData,
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
-      headers: { ...formData.getHeaders(), 'content-length': contentLength }
-    })).data
+    // the form body streams the file: it is rebuilt on each attempt
+    const buildForm = () => {
+      const formData = new FormData()
+      formData.append('actions', fs.createReadStream(tmpFile), { filename })
+      return formData
+    }
+    await log.info(`chargement de ${formatBytes((await fs.stat(tmpFile)).size)} dans un jeu incrémental`)
+    const bulkUrl = `api/v1/datasets/${processingConfig.dataset.id}/_bulk_lines?sep=${processingConfig.separator}`
+    // lines without an _id would be inserted twice if a gateway error hid a bulk that went through
+    const result = (await dfRetry(async () => {
+      const formData = buildForm()
+      return axios({
+        method: 'post',
+        url: bulkUrl,
+        data: formData,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        headers: { ...formData.getHeaders(), 'content-length': await getContentLength(formData) }
+      })
+    }, log, { label: 'POST _bulk_lines', creates: true })).data
     await log.info(`lignes chargées: ${result.nbOk.toLocaleString()} ok, ${result.nbNotModified.toLocaleString()} sans modification, ${result.nbErrors.toLocaleString()} en erreur`)
     if (result.nbErrors) {
       await log.error(`${result.nbErrors} erreurs rencontrées`)
@@ -236,20 +260,27 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
       }
     }
   } else {
-    const formData = new FormData()
-    if (processingConfig.dataset && processingConfig.dataset.title) formData.append('title', processingConfig.dataset.title)
-    formData.append('file', fs.createReadStream(tmpFile), { filename })
-    if (processingConfig.encoding?.length) formData.append('file_encoding', processingConfig.encoding)
-    const contentLength = await getContentLength(formData)
-    await log.info(`chargement de ${formatBytes(contentLength)}`)
-    const dataset = (await axios({
-      method: 'post',
-      url: (processingConfig.dataset && processingConfig.dataset.id) ? `api/v1/datasets/${processingConfig.dataset.id}` : 'api/v1/datasets',
-      data: formData,
-      maxContentLength: Infinity,
-      maxBodyLength: Infinity,
-      headers: { ...formData.getHeaders(), 'content-length': contentLength }
-    })).data
+    const buildForm = () => {
+      const formData = new FormData()
+      if (processingConfig.dataset && processingConfig.dataset.title) formData.append('title', processingConfig.dataset.title)
+      formData.append('file', fs.createReadStream(tmpFile), { filename })
+      if (processingConfig.encoding?.length) formData.append('file_encoding', processingConfig.encoding)
+      return formData
+    }
+    await log.info(`chargement de ${formatBytes((await fs.stat(tmpFile)).size)}`)
+    const datasetId = processingConfig.dataset && processingConfig.dataset.id
+    const uploadUrl = datasetId ? `api/v1/datasets/${datasetId}` : 'api/v1/datasets'
+    const dataset = (await dfRetry(async () => {
+      const formData = buildForm()
+      return axios({
+        method: 'post',
+        url: uploadUrl,
+        data: formData,
+        maxContentLength: Infinity,
+        maxBodyLength: Infinity,
+        headers: { ...formData.getHeaders(), 'content-length': await getContentLength(formData) }
+      })
+    }, log, { label: `POST ${uploadUrl}`, creates: !datasetId })).data
     await patchConfig({ datasetMode: 'update', dataset: { id: dataset.id, title: dataset.title } })
     await log.info(`fichier chargé dans le jeu de donnée ${dataset.title} (${dataset.id})`)
   }
