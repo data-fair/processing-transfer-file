@@ -177,19 +177,19 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
   await fs.ensureDir(tmpDir)
 
   if (processingConfig.datasetMode === 'update') {
-    await log.step('Vérification du jeu de données')
+    await log.step('Check the dataset')
     let dataset: any
     try {
       dataset = (await axios.get(`api/v1/datasets/${processingConfig.dataset.id}`)).data
     } catch (err: any) {
-      if (errorStatus(err) === 404) throw new Error(`le jeu de données n'existe pas, id${processingConfig.dataset.id}`)
+      if (errorStatus(err) === 404) throw new Error(`dataset ${processingConfig.dataset.id} does not exist`)
       throw err
     }
-    if (!dataset) throw new Error(`le jeu de données n'existe pas, id${processingConfig.dataset.id}`)
-    await log.info(`le jeu de donnée existe, id="${dataset.id}", title="${dataset.title}"`)
+    if (!dataset) throw new Error(`dataset ${processingConfig.dataset.id} does not exist`)
+    await log.info(`dataset found: id="${dataset.id}", title="${dataset.title}"`)
   }
 
-  await log.step('Téléchargement du fichier')
+  await log.step('Download the file')
   const tmpFile = path.join(tmpDir, 'file')
   // creating empty file before streaming seems to fix some weird bugs with NFS
   await fs.ensureFile(tmpFile)
@@ -204,11 +204,11 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
     } else if (url.protocol === 'ftp:' || url.protocol === 'ftps:') {
       filename = await fetchFTP(processingConfig, secrets, tmpFile)
     } else {
-      throw new Error(`protocole non supporté "${url.protocol}"`)
+      throw new Error(`unsupported protocol "${url.protocol}", expected http, https, ftp, ftps or sftp`)
     }
   } catch (err: any) {
     if (err instanceof FileNotFoundError && processingConfig.processAndDelete) {
-      await log.warning('fichier non trouvé, exécution ignorée')
+      await log.warning('source file not found, the run is skipped and removed from the history')
       return { deleteOnComplete: true }
     }
     throw err
@@ -218,7 +218,7 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
   const fd = await fs.open(tmpFile, 'r')
   await fs.fsync(fd)
   await fs.close(fd)
-  await log.info(`le fichier a été téléchargé (${filename})`)
+  await log.info(`file downloaded: ${filename} (${formatBytes((await fs.stat(tmpFile)).size, 'en')})`)
 
   if (processingConfig.ignoreFirstLines) {
     await execFile('sed', ['-i', `1,${Number(processingConfig.ignoreFirstLines)}d`, tmpFile])
@@ -226,11 +226,11 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
 
   // a stopped run must not publish a partial file
   if (shouldBeStopped) {
-    await log.warning('interrompu avant le chargement, le jeu de données n\'est pas modifié')
+    await log.warning('run stopped before the upload, the dataset is left unchanged')
     return
   }
 
-  await log.step('Chargement vers le jeu de données')
+  await log.step('Upload to the dataset')
   if (processingConfig.datasetMode === 'lines') {
     // the form body streams the file: it is rebuilt on each attempt
     const buildForm = () => {
@@ -238,7 +238,7 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
       formData.append('actions', fs.createReadStream(tmpFile), { filename })
       return formData
     }
-    await log.info(`chargement de ${formatBytes((await fs.stat(tmpFile)).size)} dans un jeu incrémental`)
+    await log.info(`sending the lines of ${filename} to the incremental dataset ${processingConfig.dataset.id}`)
     const bulkUrl = `api/v1/datasets/${processingConfig.dataset.id}/_bulk_lines?sep=${processingConfig.separator}`
     // lines without an _id would be inserted twice if a gateway error hid a bulk that went through
     const result = (await dfRetry(async () => {
@@ -252,9 +252,9 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
         headers: { ...formData.getHeaders(), 'content-length': await getContentLength(formData) }
       })
     }, log, { label: 'POST _bulk_lines', creates: true })).data
-    await log.info(`lignes chargées: ${result.nbOk.toLocaleString()} ok, ${result.nbNotModified.toLocaleString()} sans modification, ${result.nbErrors.toLocaleString()} en erreur`)
+    await log.info(`lines loaded: ${result.nbOk} ok, ${result.nbNotModified} not modified, ${result.nbErrors} in error`)
     if (result.nbErrors) {
-      await log.error(`${result.nbErrors} erreurs rencontrées`)
+      await log.error(`${result.nbErrors} lines in error`)
       for (const error of result.errors) {
         await log.error(JSON.stringify(error))
       }
@@ -267,8 +267,8 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
       if (processingConfig.encoding?.length) formData.append('file_encoding', processingConfig.encoding)
       return formData
     }
-    await log.info(`chargement de ${formatBytes((await fs.stat(tmpFile)).size)}`)
     const datasetId = processingConfig.dataset && processingConfig.dataset.id
+    await log.info(datasetId ? `sending ${filename} to the dataset ${datasetId}` : `sending ${filename} to a new dataset`)
     const uploadUrl = datasetId ? `api/v1/datasets/${datasetId}` : 'api/v1/datasets'
     const dataset = (await dfRetry(async () => {
       const formData = buildForm()
@@ -282,11 +282,11 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
       })
     }, log, { label: `POST ${uploadUrl}`, creates: !datasetId })).data
     await patchConfig({ datasetMode: 'update', dataset: { id: dataset.id, title: dataset.title } })
-    await log.info(`fichier chargé dans le jeu de donnée ${dataset.title} (${dataset.id})`)
+    await log.info(`file loaded into the dataset "${dataset.title}" (${dataset.id})`)
   }
 
   if (processingConfig.processAndDelete) {
-    await log.info('suppression du fichier source')
+    await log.info(`deleting the source file ${url.pathname} from the remote server`)
     await deleteRemoteFile(processingConfig, secrets)
   }
 }

@@ -228,7 +228,7 @@ describe('run over http', () => {
     const result = await transferFilePlugin.run(context)
     assert.deepEqual(result, { deleteOnComplete: true })
     assert.equal(log.warning.mock.callCount(), 1)
-    assert.equal(log.warning.mock.calls[0].arguments[0], 'fichier non trouvé, exécution ignorée')
+    assert.equal(log.warning.mock.calls[0].arguments[0], 'source file not found, the run is skipped and removed from the history')
   })
 
   it('should parse the filename from a content-disposition with a trailing semicolon', async () => {
@@ -348,7 +348,7 @@ describe('run over http', () => {
 
   it('should throw an error for an unsupported protocol', async () => {
     const { context } = makeContext({ processingConfig: { url: 'webdav://test.com/file.csv' } })
-    await assert.rejects(() => transferFilePlugin.run(context), /protocole non supporté "webdav:"/)
+    await assert.rejects(() => transferFilePlugin.run(context), /unsupported protocol "webdav:"/)
   })
 
   it('should check the dataset existence in update mode', async () => {
@@ -369,7 +369,7 @@ describe('run over http', () => {
       processingConfig: { datasetMode: 'update', dataset: { id: 'ds1', title: 'Existing dataset' } }
     })
     await transferFilePlugin.run(context)
-    assert.equal(log.step.mock.calls[0].arguments[0], 'Vérification du jeu de données')
+    assert.equal(log.step.mock.calls[0].arguments[0], 'Check the dataset')
     assert.equal(patchConfig.mock.callCount(), 1)
     assert.deepEqual(patchConfig.mock.calls[0].arguments[0], { datasetMode: 'update', dataset: { id: 'ds1', title: 'Existing dataset' } })
     assert.ok(capturedBodies[0].includes('name="file"'))
@@ -385,7 +385,7 @@ describe('run over http', () => {
     const { context } = makeContext({
       processingConfig: { datasetMode: 'update', dataset: { id: 'ds1', title: 'Existing dataset' } }
     })
-    await assert.rejects(() => transferFilePlugin.run(context), /le jeu de données n'existe pas, idds1/)
+    await assert.rejects(() => transferFilePlugin.run(context), /dataset ds1 does not exist/)
   })
 
   it('should throw a clean error when the dataset is not found in update mode', async () => {
@@ -398,7 +398,7 @@ describe('run over http', () => {
     const { context } = makeContext({
       processingConfig: { datasetMode: 'update', dataset: { id: 'ds1', title: 'Existing dataset' } }
     })
-    await assert.rejects(() => transferFilePlugin.run(context), /le jeu de données n'existe pas, idds1/)
+    await assert.rejects(() => transferFilePlugin.run(context), /dataset ds1 does not exist/)
   })
 
   it('should rethrow other errors when checking the dataset in update mode', async () => {
@@ -454,9 +454,9 @@ describe('run over http', () => {
       processingConfig: { datasetMode: 'lines', separator: ',', dataset: { id: 'ds1', title: 'Existing dataset' } }
     })
     await transferFilePlugin.run(context)
-    assert.equal(log.info.mock.calls.filter((call: any) => call.arguments[0] === 'lignes chargées: 1 ok, 0 sans modification, 2 en erreur').length, 1)
+    assert.equal(log.info.mock.calls.filter((call: any) => call.arguments[0] === 'lines loaded: 1 ok, 0 not modified, 2 in error').length, 1)
     assert.equal(log.error.mock.callCount(), 3)
-    assert.equal(log.error.mock.calls[0].arguments[0], '2 erreurs rencontrées')
+    assert.equal(log.error.mock.calls[0].arguments[0], '2 lines in error')
   })
 
   it('should load lines without errors', async () => {
