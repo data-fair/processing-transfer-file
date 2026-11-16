@@ -1,5 +1,7 @@
 import { EventEmitter } from 'node:events'
-import { Readable } from 'node:stream'
+import http from 'node:http'
+import type { AddressInfo } from 'node:net'
+import { PassThrough, Readable } from 'node:stream'
 import { strict as assert } from 'node:assert'
 import { mock, it, describe, beforeEach } from 'node:test'
 import axios from 'axios'
@@ -9,22 +11,24 @@ import path from 'node:path'
 import nock from 'nock'
 import * as transferFilePlugin from '../../index.ts'
 import * as transferLib from '../../lib/transfer.ts'
+import { stallOptions } from '../../lib/stall.ts'
 
 nock.disableNetConnect()
 
 const csv = 'country\nfrance\nengland\n'
 
-const sftpState: any = { getError: null, deleteError: null, getCalls: [], deleteCalls: [], ends: 0, connectOptions: null }
+const sftpState: any = { stall: false, getError: null, deleteError: null, getCalls: [], deleteCalls: [], ends: 0, connectOptions: null }
 class MockSFTPClient {
   async connect (options: any) {
     sftpState.connectOptions = options
   }
 
-  async get (remotePath: string, localPath: string) {
-    sftpState.getCalls.push({ remotePath, localPath })
+  async get (remotePath: string, dst: any) {
+    sftpState.getCalls.push({ remotePath, dst })
     if (sftpState.getError) throw sftpState.getError
-    await fs.ensureFile(localPath)
-    await fs.writeFile(localPath, csv)
+    // like ssh2-sftp-client: the transfer fails when its destination stream errors
+    if (sftpState.stall) return new Promise((_resolve, reject) => dst.on('error', reject))
+    dst.end(csv)
   }
 
   async delete (remotePath: string) {
@@ -38,7 +42,7 @@ class MockSFTPClient {
 }
 mock.module('ssh2-sftp-client', { exports: { default: MockSFTPClient } })
 
-const ftpState: any = { getError: null, deleteError: null, getCalls: [], deleteCalls: [], ends: 0, connectOptions: null }
+const ftpState: any = { stall: null, getError: null, deleteError: null, getCalls: [], deleteCalls: [], ends: 0, connectOptions: null }
 class MockFTPClient extends EventEmitter {
   connect (options: any) {
     ftpState.connectOptions = options
@@ -48,6 +52,8 @@ class MockFTPClient extends EventEmitter {
   get (remotePath: string, cb: any) {
     ftpState.getCalls.push(remotePath)
     if (ftpState.getError) return cb(ftpState.getError)
+    if (ftpState.stall === 'get') return
+    if (ftpState.stall === 'data') return cb(null, new PassThrough())
     cb(null, Readable.from([csv]))
   }
 
@@ -76,6 +82,9 @@ mock.module('@data-fair/lib-node/ssrf.js', {
 })
 
 const resetState = () => {
+  stallOptions.timeoutMs = 5 * 60 * 1000
+  sftpState.stall = false
+  ftpState.stall = null
   sftpState.getError = null
   sftpState.deleteError = null
   sftpState.getCalls = []
@@ -781,5 +790,69 @@ describe('data-fair upload', () => {
     await transferFilePlugin.run(context)
     assert.equal(patchConfig.mock.callCount(), 0)
     assert.ok(nock.isDone())
+  })
+})
+
+describe('stalled downloads', () => {
+  beforeEach(() => {
+    resetState()
+    nock.cleanAll()
+    stallOptions.timeoutMs = 100
+  })
+
+  it('should fail an http download whose body stops coming after the headers', async () => {
+    // nock only answers once the body starts: a real server is needed to send the headers alone
+    const server = http.createServer((_req, res) => {
+      res.writeHead(200, { 'content-type': 'text/csv' })
+      res.flushHeaders()
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    nock.enableNetConnect('127.0.0.1')
+    try {
+      const { port } = server.address() as AddressInfo
+      const { context, patchConfig } = makeContext({ processingConfig: { url: `http://127.0.0.1:${port}/file.csv` } })
+      await assert.rejects(() => transferFilePlugin.run(context), /download stalled: no data received/)
+      assert.equal(patchConfig.mock.callCount(), 0)
+    } finally {
+      nock.disableNetConnect()
+      server.closeAllConnections()
+      server.close()
+    }
+  })
+
+  it('should fail a stalled sftp download and close the connection', async () => {
+    sftpState.stall = true
+    const { context, patchConfig } = makeContext({ processingConfig: { url: 'sftp://test.com/files/data.csv' } })
+    await assert.rejects(() => transferFilePlugin.run(context), /download stalled: no data received/)
+    assert.equal(sftpState.ends, 1)
+    assert.equal(patchConfig.mock.callCount(), 0)
+  })
+
+  it('should fail an ftp download whose data connection never opens', async () => {
+    ftpState.stall = 'get'
+    const { context } = makeContext({ processingConfig: { url: 'ftp://test.com/files/data.csv' } })
+    await assert.rejects(() => transferFilePlugin.run(context), /download stalled: no data received/)
+    assert.equal(ftpState.ends, 1)
+  })
+
+  it('should fail an ftp download whose data stops coming', async () => {
+    ftpState.stall = 'data'
+    const { context } = makeContext({ processingConfig: { url: 'ftp://test.com/files/data.csv' } })
+    await assert.rejects(() => transferFilePlugin.run(context), /download stalled: no data received/)
+    assert.equal(ftpState.ends, 1)
+  })
+
+  it('should not fail a slow download that keeps receiving data', async () => {
+    const body = new PassThrough()
+    let sent = 0
+    const interval = setInterval(() => {
+      if (sent++ < 4) body.write(sent === 1 ? 'country\n' : 'france\n')
+      else { clearInterval(interval); body.end() }
+    }, 60)
+    nock('https://test.com').get('/files/file.csv').reply(200, () => body)
+    nock('http://datafair.test').post('/api/v1/datasets').reply(200, { id: 'ds1', title: 'Test dataset' })
+    const { context, patchConfig } = makeContext()
+    await transferFilePlugin.run(context)
+    assert.equal(patchConfig.mock.callCount(), 1)
   })
 })

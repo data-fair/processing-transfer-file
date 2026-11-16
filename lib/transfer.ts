@@ -10,6 +10,7 @@ import path from 'node:path'
 import fs from 'fs-extra'
 import { execFile as execFileCb } from 'node:child_process'
 import { dfRetry, errorStatus } from './retry.ts'
+import { StallGuard } from './stall.ts'
 
 const execFile = promisify(execFileCb)
 
@@ -29,7 +30,8 @@ class FileNotFoundError extends Error {
 
 const fetchHTTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets'], tmpFile: string, axios: ProcessingContext['axios']) => {
   const password = secrets?.password ?? processingConfig.password
-  // remote host: follow its redirects, and give up on a server that stops answering
+  // remote host: follow its redirects, and give up on a server that does not answer
+  // (this timeout stops once the headers are received, the body is watched by a StallGuard)
   const opts: any = { responseType: 'stream', maxRedirects: 4, timeout: 60000 }
   if (processingConfig.username && password) {
     opts.auth = { username: processingConfig.username, password }
@@ -41,7 +43,7 @@ const fetchHTTP = async (processingConfig: ProcessingConfig, secrets: Processing
     if (errorStatus(err) === 404) throw new FileNotFoundError(`File not found: ${processingConfig.url}`)
     throw err
   }
-  await pipeline(res.data, fs.createWriteStream(tmpFile))
+  await pipeline(res.data, new StallGuard(), fs.createWriteStream(tmpFile))
   if (processingConfig.filename) return processingConfig.filename
   if (res.headers['content-disposition'] && res.headers['content-disposition'].includes('filename=')) {
     const contentDisposition = res.headers['content-disposition']
@@ -78,9 +80,13 @@ const connectSFTP = async (processingConfig: ProcessingConfig, secrets: Processi
 const fetchSFTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets'], tmpFile: string) => {
   const url = new URL(processingConfig.url)
   const sftp = await connectSFTP(processingConfig, secrets)
+  const guard = new StallGuard()
+  const written = pipeline(guard, fs.createWriteStream(tmpFile))
   try {
-    await sftp.get(url.pathname, tmpFile)
+    // sftp.get fails when its destination stream errors, so a stall aborts it too
+    await Promise.all([sftp.get(url.pathname, guard), written])
   } catch (err: any) {
+    guard.destroy()
     if (err.message?.toLowerCase().includes('no such file') || err.code === 'ENOENT') {
       throw new FileNotFoundError(`File not found: ${url.pathname}`)
     }
@@ -117,15 +123,20 @@ const connectFTP = async (processingConfig: ProcessingConfig, secrets: Processin
 const fetchFTP = async (processingConfig: ProcessingConfig, secrets: ProcessingContext['secrets'], tmpFile: string) => {
   const url = new URL(processingConfig.url)
   const ftp = await connectFTP(processingConfig, secrets)
+  const guard = new StallGuard()
+  const written = pipeline(guard, fs.createWriteStream(tmpFile))
   try {
-    const stream = await new Promise<NodeJS.ReadableStream>((resolve, reject) => {
+    const getStream = new Promise<NodeJS.ReadableStream>((resolve, reject) => {
       ftp.get(url.pathname, (err, stream) => {
         if (err) reject(err)
         else resolve(stream)
       })
     })
-    await pipeline(stream, fs.createWriteStream(tmpFile))
+    // the guard is already running: a server that never opens the data connection fails too
+    const stream = await Promise.race([getStream, written as Promise<never>])
+    await Promise.all([pipeline(stream, guard), written])
   } catch (err: any) {
+    guard.destroy()
     if (err.message?.toLowerCase().includes('no such file') || err.message?.toLowerCase().includes('not found')) {
       throw new FileNotFoundError(`File not found: ${url.pathname}`)
     }
