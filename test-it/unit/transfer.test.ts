@@ -12,6 +12,7 @@ import nock from 'nock'
 import * as transferFilePlugin from '../../index.ts'
 import * as transferLib from '../../lib/transfer.ts'
 import { stallOptions } from '../../lib/stall.ts'
+import { finalizeOptions } from '../../lib/finalize.ts'
 
 nock.disableNetConnect()
 
@@ -115,15 +116,25 @@ const makeContext = (overrides: any = {}) => {
     debug: mock.fn(async () => {})
   }
   const patchConfig = mock.fn(async () => {})
+  // journal events replayed to the filter of ws.waitFor, like the data-fair worker would emit them
+  const journal: any[] = overrides.journal ?? [{ type: 'finalize-end' }]
+  const ws = {
+    waitFor: mock.fn(async (_channel: string, filter: (e: any) => boolean, timeout: number) => {
+      for (const event of journal) if (filter(event)) return event
+      if (overrides.pendingJournal) return new Promise(() => {})
+      throw new Error(`Timeout of ${timeout}ms exceeded`)
+    })
+  }
   const context: any = {
     processingConfig,
     secrets: overrides.secrets ?? {},
     tmpDir,
     axios: axios.create({ baseURL: 'http://datafair.test' }),
+    ws,
     log,
     patchConfig
   }
-  return { context, tmpDir, log, patchConfig }
+  return { context, tmpDir, log, patchConfig, ws }
 }
 
 describe('run over http', () => {
@@ -369,7 +380,7 @@ describe('run over http', () => {
       .reply(200, { id: 'ds1', title: 'Existing dataset' })
     const capturedBodies: any = []
     nock('http://datafair.test')
-      .post('/api/v1/datasets/ds1')
+      .post('/api/v1/datasets/ds1').query(true)
       .reply(200, function (uri: string, requestBody: any) {
         capturedBodies.push(requestBody)
         return { id: 'ds1', title: 'Existing dataset' }
@@ -765,9 +776,9 @@ describe('data-fair upload', () => {
       .reply(200, csv)
     const capturedBodies: any = []
     nock('http://datafair.test')
-      .post('/api/v1/datasets/ds1')
+      .post('/api/v1/datasets/ds1').query(true)
       .reply(429, 'Too Many Requests', { 'retry-after': '0.001' })
-      .post('/api/v1/datasets/ds1')
+      .post('/api/v1/datasets/ds1').query(true)
       .reply(200, function (uri: string, requestBody: any) {
         capturedBodies.push(requestBody)
         return { id: 'ds1', title: 'Test dataset' }
@@ -854,5 +865,144 @@ describe('stalled downloads', () => {
     const { context, patchConfig } = makeContext()
     await transferFilePlugin.run(context)
     assert.equal(patchConfig.mock.callCount(), 1)
+  })
+})
+
+describe('schema compatibility of an update', () => {
+  const updateConfig = { datasetMode: 'update', dataset: { id: 'ds1', title: 'Existing dataset' } }
+
+  // nock the dataset check and the upload, the query of the upload is captured
+  const nockUpdate = () => {
+    nock('https://test.com').get('/files/file.csv').reply(200, csv)
+    const queries: any[] = []
+    nock('http://datafair.test')
+      .get('/api/v1/datasets/ds1')
+      .reply(200, { id: 'ds1', title: 'Existing dataset' })
+      .post('/api/v1/datasets/ds1')
+      .query((query) => { queries.push(query); return true })
+      .reply(200, { id: 'ds1', title: 'Existing dataset' })
+    return queries
+  }
+
+  const breaking = { type: 'validation-error', data: 'The structure of the file contains breaking changes: the column "country" was removed', draft: true }
+  const cancelled = { type: 'draft-cancelled', data: 'automatic cancellation', draft: true }
+
+  beforeEach(() => {
+    resetState()
+    nock.cleanAll()
+    finalizeOptions.timeoutMs = 60 * 60 * 1000
+  })
+
+  it('should ask data-fair to reject an incompatible file by default', async () => {
+    const queries = nockUpdate()
+    const { context, ws } = makeContext({ processingConfig: updateConfig })
+    await transferFilePlugin.run(context)
+    assert.equal(queries[0].draft, 'compatibleOrCancel')
+    assert.equal(ws.waitFor.mock.calls[0].arguments[0], 'datasets/ds1/journal')
+  })
+
+  it('should fail the run when the file breaks the schema', async () => {
+    nockUpdate()
+    const { context, patchConfig } = makeContext({ processingConfig: updateConfig, journal: [{ type: 'finalize-start' }, breaking, cancelled] })
+    await assert.rejects(() => transferFilePlugin.run(context), /column "country" was removed\. The new file was rejected and the dataset keeps its previous data/)
+    // the dataset itself is unchanged in the config
+    assert.equal(patchConfig.mock.callCount(), 1)
+  })
+
+  it('should fail the run when the finalized file is still a draft', async () => {
+    nockUpdate()
+    const { context } = makeContext({ processingConfig: updateConfig, journal: [{ type: 'finalize-end', draft: true }] })
+    await assert.rejects(() => transferFilePlugin.run(context), /kept as a draft/)
+  })
+
+  it('should not delete the source file when the file is rejected', async () => {
+    nockUpdate()
+    const { context } = makeContext({
+      processingConfig: { ...updateConfig, url: 'sftp://test.com/files/file.csv', processAndDelete: true },
+      journal: [breaking, cancelled]
+    })
+    nock.cleanAll()
+    nock('http://datafair.test')
+      .get('/api/v1/datasets/ds1').reply(200, { id: 'ds1', title: 'Existing dataset' })
+      .post('/api/v1/datasets/ds1').query(true).reply(200, { id: 'ds1', title: 'Existing dataset' })
+    await assert.rejects(() => transferFilePlugin.run(context), /was rejected/)
+    assert.equal(sftpState.deleteCalls.length, 0)
+  })
+
+  it('should publish an incompatible file when the schema update is forced', async () => {
+    const queries = nockUpdate()
+    const { context, log } = makeContext({
+      processingConfig: { ...updateConfig, forceUpdate: true },
+      journal: [breaking, { type: 'finalize-end' }]
+    })
+    await transferFilePlugin.run(context)
+    assert.equal(queries[0].draft, 'always')
+    assert.ok(log.warning.mock.calls.some((c: any) => /breaking changes.*The schema update is forced/.test(c.arguments[0])))
+  })
+
+  it('should fail the run when lines break the validation rules', async () => {
+    nockUpdate()
+    const { context } = makeContext({
+      processingConfig: { ...updateConfig, forceUpdate: true },
+      journal: [{ type: 'validation-error', data: '3 lines with a validation error', hasDiagnosticFile: true }]
+    })
+    await assert.rejects(() => transferFilePlugin.run(context), /does not respect the validation rules of the dataset: 3 lines/)
+  })
+
+  it('should fail the run when data-fair cannot process the file', async () => {
+    nockUpdate()
+    const { context, log } = makeContext({
+      processingConfig: updateConfig,
+      journal: [{ type: 'error-retry', data: 'parse error' }, { type: 'error', data: 'parse error' }]
+    })
+    await assert.rejects(() => transferFilePlugin.run(context), /data-fair could not process the file: parse error/)
+    assert.ok(log.warning.mock.calls.some((c: any) => /will retry: parse error/.test(c.arguments[0])))
+  })
+
+  it('should fail the run with the error report when lines are rejected', async () => {
+    nockUpdate()
+    const { context } = makeContext({
+      processingConfig: updateConfig,
+      journal: [{ type: 'draft-cancelled', data: 'automatic cancellation: 3 lines with a validation error', hasDiagnosticFile: true }]
+    })
+    await assert.rejects(() => transferFilePlugin.run(context), /rejected and the dataset keeps its previous data: automatic cancellation: 3 lines with a validation error \(error report: api\/v1\/datasets\/ds1\/cancelled-draft-diagnostic\.csv\)/)
+  })
+
+  it('should fail the run when data-fair cancels the draft without a report', async () => {
+    nockUpdate()
+    const { context } = makeContext({ processingConfig: updateConfig, journal: [{ type: 'draft-cancelled', data: 'automatic cancellation' }] })
+    await assert.rejects(() => transferFilePlugin.run(context), /keeps its previous data: automatic cancellation$/)
+  })
+
+  it('should only warn when data-fair takes longer than the wait timeout', async () => {
+    nockUpdate()
+    const { context, log } = makeContext({ processingConfig: updateConfig, journal: [] })
+    await transferFilePlugin.run(context)
+    assert.ok(log.warning.mock.calls.some((c: any) => /still processing the file/.test(c.arguments[0])))
+  })
+
+  it('should rethrow other websocket errors', async () => {
+    nockUpdate()
+    const { context, ws } = makeContext({ processingConfig: updateConfig })
+    ws.waitFor.mock.mockImplementation(async () => { throw new Error('socket hang up') })
+    await assert.rejects(() => transferFilePlugin.run(context), /socket hang up/)
+  })
+
+  it('should stop waiting when the run is stopped', async () => {
+    nockUpdate()
+    const { context, log } = makeContext({ processingConfig: updateConfig, pendingJournal: true, journal: [] })
+    log.step.mock.mockImplementation(async (name: string) => {
+      if (name === 'Wait for data-fair to process the file') setTimeout(() => transferFilePlugin.stop())
+    })
+    await transferFilePlugin.run(context)
+    assert.ok(log.warning.mock.calls.some((c: any) => /run stopped while data-fair was processing/.test(c.arguments[0])))
+  })
+
+  it('should wait for the processing of a new dataset too', async () => {
+    nock('https://test.com').get('/files/file.csv').reply(200, csv)
+    nock('http://datafair.test').post('/api/v1/datasets').reply(200, { id: 'new1', title: 'Test dataset' })
+    const { context, ws } = makeContext({ journal: [{ type: 'error', data: 'unsupported file' }] })
+    await assert.rejects(() => transferFilePlugin.run(context), /could not process the file: unsupported file/)
+    assert.equal(ws.waitFor.mock.calls[0].arguments[0], 'datasets/new1/journal')
   })
 })

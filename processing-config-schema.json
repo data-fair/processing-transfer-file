@@ -55,6 +55,16 @@
                   "itemKey": "item.id"
                 }
               }
+            },
+            "forceUpdate": {
+              "type": "boolean",
+              "title": "Force the schema update",
+              "x-i18n-title": { "fr": "Forcer la mise à jour du schéma" },
+              "default": false,
+              "description": "By default, a file whose structure breaks the schema of the dataset (a column removed or with another type, an error page sent by the source server...) is rejected: the current data stays online and the run fails. The same goes for a file whose lines break the validation rules of the dataset. Enable this option when the file must always be published, even when its structure changes.",
+              "x-i18n-description": {
+                "fr": "Par défaut, un fichier dont la structure casse le schéma du jeu de données (colonne supprimée ou de type différent, page d'erreur renvoyée par le serveur source...) est rejeté : les données actuelles restent en ligne et l'exécution échoue. Il en va de même pour un fichier dont des lignes ne respectent pas les règles de validation du jeu de données. Activez cette option si le fichier doit toujours être publié, même quand sa structure change."
+              }
             }
           }
         },

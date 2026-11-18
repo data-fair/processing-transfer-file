@@ -11,11 +11,16 @@ import fs from 'fs-extra'
 import { execFile as execFileCb } from 'node:child_process'
 import { dfRetry, errorStatus } from './retry.ts'
 import { StallGuard } from './stall.ts'
+import { watchFinalization } from './finalize.ts'
 
 const execFile = promisify(execFileCb)
 
 let shouldBeStopped = false
-export const stop = async () => { shouldBeStopped = true }
+let signalStop: (() => void) | undefined
+export const stop = async () => {
+  shouldBeStopped = true
+  signalStop?.()
+}
 
 // a name read from the url or sent by the remote server is only kept as a plain
 // file name (no directory part, no traversal once percent-decoded)
@@ -183,8 +188,9 @@ export const deleteRemoteFile = async (processingConfig: ProcessingConfig, secre
 }
 
 export const run = async (context: ProcessingContext<ProcessingConfig>) => {
-  const { processingConfig, secrets, tmpDir, axios, log, patchConfig } = context
+  const { processingConfig, secrets, tmpDir, axios, ws, log, patchConfig } = context
   shouldBeStopped = false
+  const stopSignal = new Promise<void>(resolve => { signalStop = resolve })
   await fs.ensureDir(tmpDir)
 
   if (processingConfig.datasetMode === 'update') {
@@ -278,9 +284,16 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
       if (processingConfig.encoding?.length) formData.append('file_encoding', processingConfig.encoding)
       return formData
     }
-    const datasetId = processingConfig.dataset && processingConfig.dataset.id
+    const datasetId = (processingConfig.dataset as { id?: string } | undefined)?.id
+    // an update never publishes a file that breaks the schema of the dataset (a source
+    // server answering with an error page, a renamed column...) unless forced: data-fair
+    // cancels it and the watch below turns that into a failed run
+    const forceUpdate = processingConfig.datasetMode === 'update' && !!processingConfig.forceUpdate
     await log.info(datasetId ? `sending ${filename} to the dataset ${datasetId}` : `sending ${filename} to a new dataset`)
-    const uploadUrl = datasetId ? `api/v1/datasets/${datasetId}` : 'api/v1/datasets'
+    if (datasetId && !forceUpdate) await log.info('a file that breaks the dataset schema or its validation rules will be rejected')
+    const uploadUrl = datasetId ? `api/v1/datasets/${datasetId}?draft=${forceUpdate ? 'always' : 'compatibleOrCancel'}` : 'api/v1/datasets'
+    // listen before the upload so that a fast worker cannot emit the events first
+    let watch = datasetId ? watchFinalization(ws, log, datasetId, { forceUpdate, stopSignal }) : undefined
     const dataset = (await dfRetry(async () => {
       const formData = buildForm()
       return axios({
@@ -293,7 +306,10 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
       })
     }, log, { label: `POST ${uploadUrl}`, creates: !datasetId })).data
     await patchConfig({ datasetMode: 'update', dataset: { id: dataset.id, title: dataset.title } })
-    await log.info(`file loaded into the dataset "${dataset.title}" (${dataset.id})`)
+    await log.info(`file sent to the dataset "${dataset.title}" (${dataset.id})`)
+    watch = watch ?? watchFinalization(ws, log, dataset.id, { forceUpdate, stopSignal })
+    await log.step('Wait for data-fair to process the file')
+    await watch.done()
   }
 
   if (processingConfig.processAndDelete) {
