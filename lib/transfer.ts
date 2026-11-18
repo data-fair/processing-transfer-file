@@ -275,6 +275,9 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
       for (const error of result.errors) {
         await log.error(JSON.stringify(error))
       }
+      // data-fair answers 200 as soon as one line went through: rejected lines must still
+      // fail the run, and the source file is kept so that they are not lost
+      throw new Error(`${result.nbErrors} lines were rejected by data-fair, the source file is kept`)
     }
   } else {
     const buildForm = () => {

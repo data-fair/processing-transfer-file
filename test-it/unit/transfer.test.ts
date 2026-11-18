@@ -462,7 +462,7 @@ describe('run over http', () => {
     assert.ok(capturedBodies[0].includes('name="file_encoding"'))
   })
 
-  it('should load lines and log the errors', async () => {
+  it('should log the rejected lines and fail the run', async () => {
     nock('https://test.com')
       .get('/files/file.csv')
       .reply(200, csv)
@@ -473,7 +473,7 @@ describe('run over http', () => {
     const { context, log } = makeContext({
       processingConfig: { datasetMode: 'lines', separator: ',', dataset: { id: 'ds1', title: 'Existing dataset' } }
     })
-    await transferFilePlugin.run(context)
+    await assert.rejects(() => transferFilePlugin.run(context), /2 lines were rejected by data-fair, the source file is kept/)
     assert.equal(log.info.mock.calls.filter((call: any) => call.arguments[0] === 'lines loaded: 1 ok, 0 not modified, 2 in error').length, 1)
     assert.equal(log.error.mock.callCount(), 3)
     assert.equal(log.error.mock.calls[0].arguments[0], '2 lines in error')
@@ -865,6 +865,37 @@ describe('stalled downloads', () => {
     const { context, patchConfig } = makeContext()
     await transferFilePlugin.run(context)
     assert.equal(patchConfig.mock.callCount(), 1)
+  })
+})
+
+describe('rejected lines', () => {
+  beforeEach(() => {
+    resetState()
+    nock.cleanAll()
+  })
+
+  it('should keep the source file when lines are rejected', async () => {
+    nock('http://datafair.test')
+      .post('/api/v1/datasets/ds1/_bulk_lines')
+      .query(true)
+      .reply(200, { nbOk: 1, nbNotModified: 0, nbErrors: 1, errors: [{ line: 2, error: 'bad value' }] })
+    const { context } = makeContext({
+      processingConfig: { datasetMode: 'lines', separator: ',', dataset: { id: 'ds1' }, url: 'sftp://test.com/files/file.csv', processAndDelete: true }
+    })
+    await assert.rejects(() => transferFilePlugin.run(context), /1 lines were rejected/)
+    assert.equal(sftpState.deleteCalls.length, 0)
+  })
+
+  it('should delete the source file when all the lines are loaded', async () => {
+    nock('http://datafair.test')
+      .post('/api/v1/datasets/ds1/_bulk_lines')
+      .query(true)
+      .reply(200, { nbOk: 2, nbNotModified: 0, nbErrors: 0, errors: [] })
+    const { context } = makeContext({
+      processingConfig: { datasetMode: 'lines', separator: ',', dataset: { id: 'ds1' }, url: 'sftp://test.com/files/file.csv', processAndDelete: true }
+    })
+    await transferFilePlugin.run(context)
+    assert.deepEqual(sftpState.deleteCalls, ['/files/file.csv'])
   })
 })
 
