@@ -1,7 +1,7 @@
 // Override these values locally by creating a config/local-test.mjs file (gitignored)
 export default {
-  /** Base URL of the data-fair instance to connect to. @example "https://staging-koumoul.com/data-fair" */
-  dataFairUrl: null,
-  /** API key for authenticating requests to data-fair. Generate one in your data-fair settings. */
-  dataFairAPIKey: null
+  /** Base URL of data-fair in the tests: requests to it are answered by nock, no instance is needed. */
+  dataFairUrl: 'http://test.data-fair.local',
+  /** API key sent to data-fair, irrelevant when using nock. */
+  dataFairAPIKey: 'test-api-key'
 }
