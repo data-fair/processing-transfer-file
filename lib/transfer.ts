@@ -296,7 +296,7 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
     if (datasetId && !forceUpdate) await log.info('a file that breaks the dataset schema or its validation rules will be rejected')
     const uploadUrl = datasetId ? `api/v1/datasets/${datasetId}?draft=${forceUpdate ? 'always' : 'compatibleOrCancel'}` : 'api/v1/datasets'
     // listen before the upload so that a fast worker cannot emit the events first
-    let watch = datasetId ? watchFinalization(ws, log, datasetId, { forceUpdate, stopSignal }) : undefined
+    let watch = datasetId ? watchFinalization(ws, axios, log, datasetId, { forceUpdate, stopSignal }) : undefined
     const dataset = (await dfRetry(async () => {
       const formData = buildForm()
       return axios({
@@ -310,7 +310,7 @@ export const run = async (context: ProcessingContext<ProcessingConfig>) => {
     }, log, { label: `POST ${uploadUrl}`, creates: !datasetId })).data
     await patchConfig({ datasetMode: 'update', dataset: { id: dataset.id, title: dataset.title } })
     await log.info(`file sent to the dataset "${dataset.title}" (${dataset.id})`)
-    watch = watch ?? watchFinalization(ws, log, dataset.id, { forceUpdate, stopSignal })
+    watch = watch ?? watchFinalization(ws, axios, log, dataset.id, { forceUpdate, stopSignal })
     await log.step('Wait for data-fair to process the file')
     await watch.done()
   }

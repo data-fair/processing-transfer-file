@@ -921,7 +921,8 @@ describe('schema compatibility of an update', () => {
   beforeEach(() => {
     resetState()
     nock.cleanAll()
-    finalizeOptions.timeoutMs = 60 * 60 * 1000
+    finalizeOptions.timeoutMs = 10 * 60 * 1000
+    finalizeOptions.statusPollMs = 1
   })
 
   it('should ask data-fair to reject an incompatible file by default', async () => {
@@ -982,12 +983,39 @@ describe('schema compatibility of an update', () => {
 
   it('should fail the run when data-fair cannot process the file', async () => {
     nockUpdate()
+    nock('http://datafair.test').get('/api/v1/datasets/ds1').query({ draft: 'true' }).reply(200, { id: 'ds1', status: 'error' })
     const { context, log } = makeContext({
       processingConfig: updateConfig,
+      pendingJournal: true,
       journal: [{ type: 'error-retry', data: 'parse error' }, { type: 'error', data: 'parse error' }]
     })
     await assert.rejects(() => transferFilePlugin.run(context), /data-fair could not process the file: parse error/)
     assert.ok(log.warning.mock.calls.some((c: any) => /will retry: parse error/.test(c.arguments[0])))
+  })
+
+  it('should only warn on a non-blocking error of data-fair', async () => {
+    nockUpdate()
+    const notice = 'the file contains one or more empty columns that will be ignored: geocodage_x'
+    const { context, log } = makeContext({
+      processingConfig: updateConfig,
+      journal: [{ type: 'error', data: notice, draft: true }, { type: 'draft-validated', data: 'automatic validation', draft: true }]
+    })
+    await transferFilePlugin.run(context)
+    assert.ok(log.warning.mock.calls.some((c: any) => c.arguments[0] === `data-fair: ${notice}`))
+    assert.ok(log.info.mock.calls.some((c: any) => /data-fair accepted the file/.test(c.arguments[0])))
+  })
+
+  it('should keep waiting while the dataset is not in error', async () => {
+    nockUpdate()
+    nock('http://datafair.test')
+      .get('/api/v1/datasets/ds1').query({ draft: 'true' }).reply(200, { id: 'ds1', status: 'error', errorRetry: '2026-11-19T05:10:00Z' })
+      .get('/api/v1/datasets/ds1').query({ draft: 'true' }).reply(200, { id: 'ds1', status: 'error' })
+    const { context } = makeContext({
+      processingConfig: updateConfig,
+      pendingJournal: true,
+      journal: [{ type: 'error', data: 'parse error' }]
+    })
+    await assert.rejects(() => transferFilePlugin.run(context), /data-fair could not process the file: parse error/)
   })
 
   it('should fail the run with the error report when lines are rejected', async () => {
@@ -1032,7 +1060,8 @@ describe('schema compatibility of an update', () => {
   it('should wait for the processing of a new dataset too', async () => {
     nock('https://test.com').get('/files/file.csv').reply(200, csv)
     nock('http://datafair.test').post('/api/v1/datasets').reply(200, { id: 'new1', title: 'Test dataset' })
-    const { context, ws } = makeContext({ journal: [{ type: 'error', data: 'unsupported file' }] })
+    nock('http://datafair.test').get('/api/v1/datasets/new1').query({ draft: 'true' }).reply(200, { id: 'new1', status: 'error' })
+    const { context, ws } = makeContext({ pendingJournal: true, journal: [{ type: 'error', data: 'unsupported file' }] })
     await assert.rejects(() => transferFilePlugin.run(context), /could not process the file: unsupported file/)
     assert.equal(ws.waitFor.mock.calls[0].arguments[0], 'datasets/new1/journal')
   })
